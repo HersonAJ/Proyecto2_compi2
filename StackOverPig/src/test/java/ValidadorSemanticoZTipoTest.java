@@ -1,6 +1,6 @@
-import com.example.contacto_3xtrat3r3str3.y.semantica.error.ErrorSemantico;
-import com.example.contacto_3xtrat3r3str3.zetariano.nodo.*;
-import com.example.contacto_3xtrat3r3str3.zetariano.semantica.ValidadorSemanticoZ;
+import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
+import com.example.stack_over_pig.zetariano.nodo.*;
+import com.example.stack_over_pig.zetariano.semantica.ValidadorSemanticoZ;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

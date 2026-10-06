@@ -1,7 +1,7 @@
 
-import com.example.contacto_3xtrat3r3str3.y.ast.*;
-import com.example.contacto_3xtrat3r3str3.y.semantica.ValidadorSemantico;
-import com.example.contacto_3xtrat3r3str3.y.semantica.error.ErrorSemantico;
+import com.example.stack_over_pig.y.ast.*;
+import com.example.stack_over_pig.y.semantica.ValidadorSemantico;
+import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
