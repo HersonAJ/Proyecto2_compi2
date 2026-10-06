@@ -1,0 +1,35 @@
+public class Persona {
+    String nombre;
+    int edad;
+    double altura;
+
+    public Persona(String nombreParametro, int edadParametro, double alturaParametro) {
+        nombre = nombreParametro;
+        edad = edadParametro;
+        altura = alturaParametro;
+    }
+
+    public String getNombre() {
+        return nombre;
+    }
+
+    public int getEdad() {
+        return edad;
+    }
+
+    public double getAltura() {
+        return altura;
+    }
+
+    public void saludar() {
+        println("Hola, mi nombre es " + nombre);
+    }
+
+    public int calcularAnioNacimiento(int anioActual) {
+        return anioActual - edad;
+    }
+
+    public boolean esMayorEdad() {
+        return edad >= 18;
+    }
+}

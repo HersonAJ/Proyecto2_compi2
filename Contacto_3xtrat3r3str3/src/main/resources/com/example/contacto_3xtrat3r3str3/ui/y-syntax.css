@@ -1,0 +1,9 @@
+.y-keyword  { -fx-fill: #0000FF; }
+.y-section  { -fx-fill: #AF00DB; }
+.y-type     { -fx-fill: #267F99; }
+.y-string   { -fx-fill: #e40c0c; }
+.y-number   { -fx-fill: #1bc888; }
+.y-comment  { -fx-fill: #008000; }
+.y-id       { -fx-fill: #001080; }
+.y-operator { -fx-fill: #000000; }
+.y-symbol   { -fx-fill: #000000; }

@@ -1,0 +1,11 @@
+.z-keyword  { -fx-fill: #0000FF; }
+.z-modifier { -fx-fill: #0000FF; }
+.z-type     { -fx-fill: #267F99; }
+.z-bool     { -fx-fill: #0000FF; }
+.z-null     { -fx-fill: #0000FF; }
+.z-string   { -fx-fill: #f10909; }
+.z-number   { -fx-fill: #13b578; }
+.z-comment  { -fx-fill: #008000; }
+.z-id       { -fx-fill: #001080; }
+.z-operator { -fx-fill: #000000; }
+.z-symbol   { -fx-fill: #000000; }

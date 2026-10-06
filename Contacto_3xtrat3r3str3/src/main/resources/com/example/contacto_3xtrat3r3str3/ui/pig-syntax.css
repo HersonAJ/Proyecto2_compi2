@@ -1,0 +1,11 @@
+.pig-section  { -fx-fill: #AF00DB; }
+.pig-keyword  { -fx-fill: #0000FF; }
+.pig-type     { -fx-fill: #267F99; }
+.pig-bool     { -fx-fill: #0000FF; }
+.pig-import   { -fx-fill: #AF00DB; }
+.pig-string   { -fx-fill: #dc0505; }
+.pig-number   { -fx-fill: #098658; }
+.pig-comment  { -fx-fill: #008000; }
+.pig-id       { -fx-fill: #001080; }
+.pig-operator { -fx-fill: #000000; }
+.pig-symbol   { -fx-fill: #000000; }

@@ -1,0 +1,14 @@
+.root {
+    -fx-font-family: "Consolas", "Monospaced";
+    -fx-font-size: 13px;
+}
+.text-area {
+    -fx-background-color: transparent;
+    -fx-text-fill: transparent;
+}
+.text-area .content {
+    -fx-background-color: transparent;
+}
+.text-area .scroll-pane {
+    -fx-background-color: transparent;
+}

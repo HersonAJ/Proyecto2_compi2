@@ -1,0 +1,21 @@
+public class Persona {
+    String nombre;
+    int edad;
+
+    public Persona(String nombreParametro, int edadParametro) {
+        nombre = nombreParametro;
+        edad = edadParametro;
+    }
+
+    public String getNombre() {
+        return nombre;
+    }
+
+    public int getEdad() {
+        return edad;
+    }
+
+    public void saludar() {
+        println("Hola desde Persona");
+    }
+}
