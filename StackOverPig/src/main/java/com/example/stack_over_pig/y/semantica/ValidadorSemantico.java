@@ -220,14 +220,14 @@ public class ValidadorSemantico {
         procesarBloque(c.cuerpoSi());
         tabla.salirScope();
 
-        if (c.cuerpoSino() != null) {
-            alcance.resolverExpresion(c.condicionSino());
-            tipos.tipoDeExpresion(c.condicionSino());
-            tipos.validarCondicionBooleana(c.condicionSino());
-            validarLlamadasEnExpresion(c.condicionSino());
+        for (NodoSentencia.RamaSino rama : c.ramasSino()) {
+            alcance.resolverExpresion(rama.condicion());
+            tipos.tipoDeExpresion(rama.condicion());
+            tipos.validarCondicionBooleana(rama.condicion());
+            validarLlamadasEnExpresion(rama.condicion());
 
             tabla.entrarScope("sino");
-            procesarBloque(c.cuerpoSino());
+            procesarBloque(rama.cuerpo());
             tabla.salirScope();
         }
         if (c.cuerpoContrario() != null) {

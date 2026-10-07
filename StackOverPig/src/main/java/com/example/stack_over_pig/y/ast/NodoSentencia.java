@@ -5,6 +5,7 @@ import com.example.stack_over_pig.c3d_v2.c.TipoC;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 
+import java.util.ArrayList;
 import java.util.List;
 
 // Nodos de sentencia del AST del lenguaje .y. Cada record sabe traducirse a cuartetas con aCodigoIntermedio()
@@ -168,13 +169,14 @@ public sealed interface NodoSentencia extends NodoAST permits
     }
 
     // CONDICIONAL
+// Una rama 'sino (cond) entonces ...' dentro de un condicional.
+    record RamaSino(int linea, int columna, NodoExpr condicion, List<NodoSentencia> cuerpo) { }
 
-    // 'si (cond) entonces ... sino ... contrario ...'  ->  etiquetas + saltos.
+    // 'si ... sino ... sino ... contrario ...'  ->  etiquetas + saltos.
     record Condicional(int linea, int columna,
                        NodoExpr condicion,
                        List<NodoSentencia> cuerpoSi,
-                       NodoExpr condicionSino,
-                       List<NodoSentencia> cuerpoSino,
+                       List<RamaSino> ramasSino,
                        List<NodoSentencia> cuerpoContrario) implements NodoSentencia {
         @Override
         public TipoNodoSentencia tipoNodo() {
@@ -185,36 +187,36 @@ public sealed interface NodoSentencia extends NodoAST permits
         public void aCodigoIntermedio(ContextoTraduccion ctx) {
             GestorCodigoIntermedio g = ctx.getGestor();
             var c = g.getContador();
+            int lFin = c.siguienteEtiqueta();
 
-            int lEtiquetaSi = c.siguienteEtiqueta();
-            int lEtiquetaFin = c.siguienteEtiqueta();
-            int lEtiquetaSino = (condicionSino != null) ? c.siguienteEtiqueta() : -1;
-
-            // Evaluar condición principal
-            AccesoMemoria condAcc = condicion.aCodigoIntermedio(ctx);
-            g.emitir(new Condicional1(condAcc, "!=", new Literal(0, "entero"), lEtiquetaSi));
-            g.emitir(new Salto(condicionSino != null ? lEtiquetaSino : lEtiquetaFin));
-
-            // Bloque 'si'
-            g.emitir(new DefinicionEtiqueta(lEtiquetaSi));
-            for (NodoSentencia s : cuerpoSi) s.aCodigoIntermedio(ctx);
-            g.emitir(new Salto(lEtiquetaFin));
-
-            // Bloque 'sino'
-            if (condicionSino != null) {
-                g.emitir(new DefinicionEtiqueta(lEtiquetaSino));
-                AccesoMemoria condSinoAcc = condicionSino.aCodigoIntermedio(ctx);
-                g.emitir(new Condicional1(condSinoAcc, "!=", new Literal(0, "entero"), lEtiquetaFin));
-                for (NodoSentencia s : cuerpoSino) s.aCodigoIntermedio(ctx);
-                g.emitir(new Salto(lEtiquetaFin));
+            // Todas las ramas en orden: primero el 'si', luego cada 'sino'.
+            List<NodoExpr> condiciones = new ArrayList<>();
+            List<List<NodoSentencia>> cuerpos = new ArrayList<>();
+            condiciones.add(condicion);
+            cuerpos.add(cuerpoSi);
+            for (RamaSino r : ramasSino) {
+                condiciones.add(r.condicion());
+                cuerpos.add(r.cuerpo());
             }
 
-            // Bloque 'contrario'
+            for (int i = 0; i < condiciones.size(); i++) {
+                int lCuerpo = c.siguienteEtiqueta();
+                int lSiguiente = c.siguienteEtiqueta();
+
+                AccesoMemoria cond = condiciones.get(i).aCodigoIntermedio(ctx);
+                g.emitir(new Condicional1(cond, "!=", new Literal(0, "entero"), lCuerpo));
+                g.emitir(new Salto(lSiguiente));
+
+                g.emitir(new DefinicionEtiqueta(lCuerpo));
+                for (NodoSentencia s : cuerpos.get(i)) s.aCodigoIntermedio(ctx);
+                g.emitir(new Salto(lFin));
+
+                g.emitir(new DefinicionEtiqueta(lSiguiente));
+            }
             if (cuerpoContrario != null) {
                 for (NodoSentencia s : cuerpoContrario) s.aCodigoIntermedio(ctx);
             }
-
-            g.emitir(new DefinicionEtiqueta(lEtiquetaFin));
+            g.emitir(new DefinicionEtiqueta(lFin));
         }
     }
 

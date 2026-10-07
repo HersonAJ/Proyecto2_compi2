@@ -513,29 +513,29 @@ public class ASTBuilder extends YParserBaseVisitor<NodoAST> {
         return null;
     }
 
-    // 'si/sino/contrario'  ->  NodoSentencia.Condicional.
+    // 'si/sino.../contrario'  ->  NodoSentencia.Condicional.
     @Override
     public NodoAST visitCondicional(YParser.CondicionalContext ctx) {
-        //extraer la condicion principal
-        NodoExpr condicionSi = (NodoExpr) visit(ctx.expresion(0));
+        NodoExpr condicionSi = (NodoExpr) visit(ctx.expresion());
         List<NodoSentencia> cuerpoSi = construirBloque(ctx.bloque(0));
 
-        //sino opcional
-        NodoExpr condicionSino = null;
-        List<NodoSentencia> cuerpoSino = null;
-        if (ctx.SINO() != null) {
-            condicionSino = (NodoExpr) visit(ctx.expresion(1));
-            cuerpoSino = construirBloque(ctx.bloque(1));
+        // Cada 'sino' es una rama; ahora puede haber varias.
+        List<NodoSentencia.RamaSino> ramas = new ArrayList<>();
+        for (YParser.RamaSinoContext r : ctx.ramaSino()) {
+            NodoExpr condicionSino = (NodoExpr) visit(r.expresion());
+            List<NodoSentencia> cuerpoSino = construirBloque(r.bloque());
+            ramas.add(new NodoSentencia.RamaSino(linea(r), columna(r), condicionSino, cuerpoSino));
         }
 
-        //contrario opcional
+        // 'contrario' opcional: es el segundo bloque directo de la regla
+        // (los bloques de los 'sino' viven dentro de ramaSino).
         List<NodoSentencia> cuerpoContrario = null;
         if (ctx.CONTRARIO() != null) {
-            int indiceBloque = ctx.SINO() != null ? 2 : 1;
-            cuerpoContrario = construirBloque(ctx.bloque(indiceBloque));
+            cuerpoContrario = construirBloque(ctx.bloque(1));
         }
 
-        return new NodoSentencia.Condicional(linea(ctx), columna(ctx), condicionSi, cuerpoSi, condicionSino, cuerpoSino, cuerpoContrario);
+        return new NodoSentencia.Condicional(linea(ctx), columna(ctx),
+                condicionSi, cuerpoSi, ramas, cuerpoContrario);
     }
 
     // 'elegir (expr): caso ... siempre ...'  ->  NodoSentencia.Elegir

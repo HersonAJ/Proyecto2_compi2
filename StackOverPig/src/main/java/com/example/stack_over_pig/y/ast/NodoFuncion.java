@@ -63,10 +63,7 @@ public sealed interface NodoFuncion extends NodoAST permits NodoFuncion.Funcion 
                     estructurasLocales, cuartetas, tiposTemporales);
         }
 
-        // ============================================================
         // Estructuras locales
-        // ============================================================
-
         private void recogerEstructurasLocales(ContextoTraduccion ctx,
                                                List<NodoSentencia> sentencias,
                                                List<EstructuraC> acumuladas) {
@@ -101,10 +98,7 @@ public sealed interface NodoFuncion extends NodoAST permits NodoFuncion.Funcion 
             }
         }
 
-        // ============================================================
         // Declaración en la tabla de símbolos
-        // ============================================================
-
         private void declararParametrosEnScope(TablaSimbolos tabla) {
             for (NodoParametro p : parametros) {
                 if (p instanceof NodoParametro.Parametro par) {
@@ -181,8 +175,8 @@ public sealed interface NodoFuncion extends NodoAST permits NodoFuncion.Funcion 
                     }
                     case NodoSentencia.Condicional c -> {
                         recogerYDeclararVariablesLocales(ctx, tabla, c.cuerpoSi(), acumuladas);
-                        if (c.cuerpoSino() != null)
-                            recogerYDeclararVariablesLocales(ctx, tabla, c.cuerpoSino(), acumuladas);
+                        for (NodoSentencia.RamaSino rama : c.ramasSino())
+                            recogerYDeclararVariablesLocales(ctx, tabla, rama.cuerpo(), acumuladas);
                         if (c.cuerpoContrario() != null)
                             recogerYDeclararVariablesLocales(ctx, tabla, c.cuerpoContrario(), acumuladas);
                     }
@@ -204,7 +198,8 @@ public sealed interface NodoFuncion extends NodoAST permits NodoFuncion.Funcion 
                             recogerYDeclararVariablesLocales(ctx, tabla, e.siempre().cuerpo(), acumuladas);
                         }
                     }
-                    default -> { }
+                    default -> {
+                    }
                 }
             }
         }
@@ -228,58 +223,59 @@ public sealed interface NodoFuncion extends NodoAST permits NodoFuncion.Funcion 
         }
     }
 
-        private void declararVariablesLocales(TablaSimbolos tabla, List<NodoSentencia> sentencias) {
-            for (NodoSentencia s : sentencias) {
-                switch (s) {
-                    case NodoSentencia.DeclaracionVariable d -> {
-                        tabla.declararVariable(d.nombre(), d.tipo());
-                    }
-                    case NodoSentencia.DeclaracionArreglo d -> {
-                        tabla.declararVariable(d.nombre(), d.tipo(),
-                                true, 1, false, null, List.of(d.tamano()));
-                    }
-                    case NodoSentencia.DeclaracionMatriz d -> {
-                        tabla.declararVariable(d.nombre(), d.tipo(),
-                                true, 2, false, null, List.of(d.filas(), d.columnas()));
-                    }
-                    case NodoSentencia.DeclaracionEstructura d -> {
-                        tabla.declararVariable(d.nombre(), d.tipoEstructura(),
-                                false, 0, true, d.tipoEstructura(), List.of());
-                    }
-                    case NodoSentencia.Condicional c -> {
-                        declararVariablesLocales(tabla, c.cuerpoSi());
-                        if (c.cuerpoSino() != null) declararVariablesLocales(tabla, c.cuerpoSino());
-                        if (c.cuerpoContrario() != null) declararVariablesLocales(tabla, c.cuerpoContrario());
-                    }
-                    case NodoSentencia.CicloPara c -> {
-                        tabla.declararVariable(c.nombreVariable(), c.tipoInicializacion());
-                        declararVariablesLocales(tabla, c.cuerpo());
-                    }
-                    case NodoSentencia.CicloMientras c -> declararVariablesLocales(tabla, c.cuerpo());
-                    case NodoSentencia.CicloHacerMientras c -> declararVariablesLocales(tabla, c.cuerpo());
-                    case NodoSentencia.Elegir e -> {
-                        for (NodoSentencia.CasoElegir caso : e.casos()) {
-                            declararVariablesLocales(tabla, caso.cuerpo());
-                        }
-                        if (e.siempre() != null) {
-                            declararVariablesLocales(tabla, e.siempre().cuerpo());
-                        }
-                    }
-                    default -> { /* no declara nada */ }
+    private void declararVariablesLocales(TablaSimbolos tabla, List<NodoSentencia> sentencias) {
+        for (NodoSentencia s : sentencias) {
+            switch (s) {
+                case NodoSentencia.DeclaracionVariable d -> {
+                    tabla.declararVariable(d.nombre(), d.tipo());
                 }
+                case NodoSentencia.DeclaracionArreglo d -> {
+                    tabla.declararVariable(d.nombre(), d.tipo(),
+                            true, 1, false, null, List.of(d.tamano()));
+                }
+                case NodoSentencia.DeclaracionMatriz d -> {
+                    tabla.declararVariable(d.nombre(), d.tipo(),
+                            true, 2, false, null, List.of(d.filas(), d.columnas()));
+                }
+                case NodoSentencia.DeclaracionEstructura d -> {
+                    tabla.declararVariable(d.nombre(), d.tipoEstructura(),
+                            false, 0, true, d.tipoEstructura(), List.of());
+                }
+                case NodoSentencia.Condicional c -> {
+                    declararVariablesLocales(tabla, c.cuerpoSi());
+                    for (NodoSentencia.RamaSino rama : c.ramasSino())
+                        declararVariablesLocales(tabla, rama.cuerpo());
+                    if (c.cuerpoContrario() != null) declararVariablesLocales(tabla, c.cuerpoContrario());
+                }
+                case NodoSentencia.CicloPara c -> {
+                    tabla.declararVariable(c.nombreVariable(), c.tipoInicializacion());
+                    declararVariablesLocales(tabla, c.cuerpo());
+                }
+                case NodoSentencia.CicloMientras c -> declararVariablesLocales(tabla, c.cuerpo());
+                case NodoSentencia.CicloHacerMientras c -> declararVariablesLocales(tabla, c.cuerpo());
+                case NodoSentencia.Elegir e -> {
+                    for (NodoSentencia.CasoElegir caso : e.casos()) {
+                        declararVariablesLocales(tabla, caso.cuerpo());
+                    }
+                    if (e.siempre() != null) {
+                        declararVariablesLocales(tabla, e.siempre().cuerpo());
+                    }
+                }
+                default -> { /* no declara nada */ }
             }
         }
+    }
 
-        // Conversión de parámetros a C
-        private static ParametroC aParametroC(NodoParametro.Parametro p) {
-            if (p.esEstructura()) {
-                return new ParametroC(p.tipoEstructura() + "*", p.nombre());
-            }
-            if (p.esArreglo()) {
-                return new ParametroC(TipoC.primitivoAC(p.tipoPrimitivo()) + "*", p.nombre());
-            }
-            return new ParametroC(TipoC.primitivoAC(p.tipoPrimitivo()), p.nombre());
+    // Conversión de parámetros a C
+    private static ParametroC aParametroC(NodoParametro.Parametro p) {
+        if (p.esEstructura()) {
+            return new ParametroC(p.tipoEstructura() + "*", p.nombre());
         }
+        if (p.esArreglo()) {
+            return new ParametroC(TipoC.primitivoAC(p.tipoPrimitivo()) + "*", p.nombre());
+        }
+        return new ParametroC(TipoC.primitivoAC(p.tipoPrimitivo()), p.nombre());
+    }
 
     private static String literalC(NodoExpr expr) {
         if (expr instanceof NodoExpr.LiteralEntero l) return String.valueOf(l.valor());
@@ -289,4 +285,4 @@ public sealed interface NodoFuncion extends NodoAST permits NodoFuncion.Funcion 
         if (expr instanceof NodoExpr.LiteralBool l) return l.valor() ? "1" : "0";
         return "0";
     }
-    }
+}

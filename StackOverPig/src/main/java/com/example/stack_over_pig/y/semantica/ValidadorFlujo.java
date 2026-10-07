@@ -133,21 +133,14 @@ public class ValidadorFlujo {
 
         // Caso 2: condicional con rama 'contrario' donde todas las ramas retornan.
         if (s instanceof NodoSentencia.Condicional c) {
-            boolean siRetorna = bloqueGarantizaRetorno(c.cuerpoSi());
+            // Sin 'contrario' siempre existe un camino sin retorno.
+            if (c.cuerpoContrario() == null) return false;
 
-            // 'contrario' es el equivalente al else. Si no hay, no se garantiza.
-            if (c.cuerpoContrario() == null) {
-                return false;
+            if (!bloqueGarantizaRetorno(c.cuerpoSi())) return false;
+            for (NodoSentencia.RamaSino rama : c.ramasSino()) {
+                if (!bloqueGarantizaRetorno(rama.cuerpo())) return false;
             }
-            boolean contrarioRetorna = bloqueGarantizaRetorno(c.cuerpoContrario());
-
-            // Si hay 'sino' intermedio, también debe retornar.
-            boolean sinoRetorna = true;
-            if (c.cuerpoSino() != null) {
-                sinoRetorna = bloqueGarantizaRetorno(c.cuerpoSino());
-            }
-
-            return siRetorna && contrarioRetorna && sinoRetorna;
+            return bloqueGarantizaRetorno(c.cuerpoContrario());
         }
         // Cualquier otra instrucción no garantiza retorno.
         return false;

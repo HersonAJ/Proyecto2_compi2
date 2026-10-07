@@ -78,9 +78,12 @@ incrementoDecremento    : accesoVariable (INCREMENTO | DECREMENTO) PUNTO_COMA? N
 
 //condicional
 condicional : SI PAR_IZQ expresion PAR_DER ENTONCES NEWLINE INDENT bloque DEDENT
-                (SINO PAR_IZQ expresion PAR_DER ENTONCES NEWLINE INDENT bloque DEDENT)?
+                ramaSino*
                 (CONTRARIO NEWLINE INDENT bloque DEDENT)?
                 ;
+
+ramaSino    : SINO PAR_IZQ expresion PAR_DER ENTONCES NEWLINE INDENT bloque DEDENT
+            ;
 
 bloque  : instruccion+
         ;
