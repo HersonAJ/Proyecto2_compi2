@@ -150,9 +150,9 @@ public sealed interface NodoSentencia extends NodoAST permits
         }
     }
 
-    // 'x++'  ->  emite 'x = x + 1'
+    // 'destino++' / 'destino--'  ->  se traduce como 'destino = destino + 1'
     record IncrementoDecremento(int linea, int columna, String operador,
-                                String nombre) implements NodoSentencia {
+                                NodoExpr destino) implements NodoSentencia {
         @Override
         public TipoNodoSentencia tipoNodo() {
             return TipoNodoSentencia.INCREMENTO_DECREMENTO;
@@ -160,14 +160,10 @@ public sealed interface NodoSentencia extends NodoAST permits
 
         @Override
         public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            GestorCodigoIntermedio g = ctx.getGestor();
-            String tipoC = ctx.getTabla().buscarVariable(nombre)
-                    .map(TipoC::aTipoC)
-                    .orElse("int");
-            AccesoVariable x = new AccesoVariable(nombre, tipoC);
             String opBinario = "++".equals(operador) ? "+" : "-";
-            Literal uno = new Literal(1, "entero");
-            g.emitir(new OperacionBinaria(x, x, opBinario, uno));
+            NodoExpr uno = new NodoExpr.LiteralEntero(linea, columna, 1);
+            NodoExpr nuevoValor = new NodoExpr.Binaria(linea, columna, opBinario, destino, uno);
+            new Asignacion(linea, columna, destino, nuevoValor).aCodigoIntermedio(ctx);
         }
     }
 

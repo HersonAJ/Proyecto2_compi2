@@ -73,7 +73,7 @@ accesoVariable  : ID (PUNTO ID | COR_IZQ expresion COR_DER)*
                 ;
 
 //incremento/decremento
-incrementoDecremento    : ID (INCREMENTO | DECREMENTO) PUNTO_COMA? NEWLINE
+incrementoDecremento    : accesoVariable (INCREMENTO | DECREMENTO) PUNTO_COMA? NEWLINE
                         ;
 
 //condicional

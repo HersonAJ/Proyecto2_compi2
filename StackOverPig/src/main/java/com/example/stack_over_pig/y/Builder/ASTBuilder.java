@@ -289,14 +289,15 @@ public class ASTBuilder extends YParserBaseVisitor<NodoAST> {
         return new NodoSentencia.Asignacion(linea(ctx), columna(ctx), destino, valor);
     }
 
-    // 'x++' o 'x--'  ->  NodoSentencia.IncrementoDecremento
+    // 'destino++' o 'destino--'  ->  NodoSentencia.IncrementoDecremento
     @Override
     public NodoAST visitIncrementoDecremento(YParser.IncrementoDecrementoContext ctx) {
-        if (ctx.ID() == null) {
+        NodoExpr destino = (NodoExpr) visit(ctx.accesoVariable());
+        if (destino == null) {
             return null;
         }
         String operador = ctx.INCREMENTO() != null ? "++" : "--";
-        return new NodoSentencia.IncrementoDecremento(linea(ctx), columna(ctx), operador, ctx.ID().getText());
+        return new NodoSentencia.IncrementoDecremento(linea(ctx), columna(ctx), operador, destino);
     }
 
     // 'retornar expr' o 'retornar'  ->  NodoSentencia.Retorno.

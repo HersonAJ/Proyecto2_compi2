@@ -29,9 +29,10 @@ public class ValidadorAsignaciones {
      * Se llama desde ValidadorSemantico en el case ASIGNACION.
      */
     public void validarDestino(NodoSentencia.Asignacion asignacion) {
-        NodoExpr destino = asignacion.destino();
+        validarDestino(asignacion.destino());
+    }
 
-        // Solo se valida cuando el destino es un identificador simple.
+    public void validarDestino(NodoExpr destino) {
         if (destino instanceof NodoExpr.Identificador id) {
             validarIdentificadorComoDestino(id);
         }

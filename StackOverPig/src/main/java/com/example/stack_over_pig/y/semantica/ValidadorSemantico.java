@@ -124,7 +124,8 @@ public class ValidadorSemantico {
 
             case INCREMENTO_DECREMENTO -> {
                 NodoSentencia.IncrementoDecremento i = (NodoSentencia.IncrementoDecremento) s;
-                alcance.resolverNombre(i.nombre(), i.linea(), i.columna());
+                alcance.resolverExpresion(i.destino());
+                asignaciones.validarDestino(i.destino());
                 validarIncrementoDecremento(i);
             }
 
@@ -174,10 +175,7 @@ public class ValidadorSemantico {
 
     /** Valida que el operando de ++/-- sea numérico. */
     private void validarIncrementoDecremento(NodoSentencia.IncrementoDecremento inc) {
-        Optional<TablaSimbolos.SimboloVariable> simbolo = tabla.buscarVariable(inc.nombre());
-        if (simbolo.isEmpty()) return;
-
-        String tipo = simbolo.get().tipo();
+        String tipo = tipos.tipoDeExpresion(inc.destino());
         if (tipo == null) return;
 
         if (!tipo.equals("entero") && !tipo.equals("flotante")) {
