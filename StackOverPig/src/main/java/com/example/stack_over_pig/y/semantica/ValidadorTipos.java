@@ -54,7 +54,7 @@ public class ValidadorTipos {
             case UNARIA -> tipoDeUnaria((NodoExpr.Unaria) expresion);
 
             case LLAMADA_FUNCION -> tipoDeLlamada((NodoExpr.LlamadaFuncion) expresion);
-            case LEER -> "cadena";
+            case LEER -> null;
         };
     }
 
