@@ -18,6 +18,7 @@ public class ValidadorFlujo {
 
     private final List<ErrorSemantico> errores;
     private int nivelCiclo = 0;
+    private int nivelSwitch = 0;
 
     public ValidadorFlujo(List<ErrorSemantico> errores) {
         this.errores = errores;
@@ -32,12 +33,16 @@ public class ValidadorFlujo {
         nivelCiclo--;
     }
 
+    //switch
+    public void entrarSwitch() { nivelSwitch++; }
+    public void salirSwitch() { nivelSwitch--; }
+
     /** Verifica que 'romper' esté dentro de un ciclo. */
     public void validarRomper(NodoSentencia.Romper r) {
-        if (nivelCiclo == 0) {
+        if (nivelCiclo == 0 && nivelSwitch == 0) {
             errores.add(new ErrorSemantico(r.linea(), r.columna(),
                     "Corrupción de flujo",
-                    "'romper' usado fuera de un ciclo"));
+                    "'romper' usado fuera de un ciclo o de un 'elegir'"));
         }
     }
 
@@ -69,9 +74,12 @@ public class ValidadorFlujo {
                 break;
             }
 
-            // Solo un romper/continuar DENTRO de un ciclo corta el flujo.
-            if ((s instanceof NodoSentencia.Romper || s instanceof NodoSentencia.Continuar)
-                    && nivelCiclo > 0) {
+            boolean romperValido = s instanceof NodoSentencia.Romper
+                    && (nivelCiclo > 0 || nivelSwitch > 0);
+            boolean continuarValido = s instanceof NodoSentencia.Continuar
+                    && nivelCiclo > 0;
+
+            if (romperValido || continuarValido) {
                 alcanzable = false;
             }
         }

@@ -244,6 +244,7 @@ public class ValidadorSemantico {
         alcance.resolverExpresion(e.expresion());
         validarLlamadasEnExpresion(e.expresion());
 
+        flujo.entrarSwitch();
         for (NodoSentencia.CasoElegir caso : e.casos()) {
             alcance.resolverExpresion(caso.valor());
             validarLlamadasEnExpresion(caso.valor());
