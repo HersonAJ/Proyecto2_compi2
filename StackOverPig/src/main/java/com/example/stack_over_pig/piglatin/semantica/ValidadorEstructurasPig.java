@@ -67,7 +67,8 @@ public class ValidadorEstructurasPig {
             ValidadorTiposPig.TipoResuelto tipoValor = tipos.tipoDeExpresion(valor);
             if (tipoValor == null) continue;
 
-            ValidadorTiposPig.TipoResuelto esperado = new ValidadorTiposPig.TipoResuelto(tipoEsperado, 0);
+            ValidadorTiposPig.TipoResuelto esperado =
+                    new ValidadorTiposPig.TipoResuelto(tipoEsperado, def.dimensionesDe(nombreAtributo));
             if (!tipos.esAsignable(esperado, tipoValor)) {
                 errores.add(new ErrorSemantico(valor.linea(), valor.columna(),
                         "Tipo incompatible en inicialización de estructura",
@@ -115,7 +116,7 @@ public class ValidadorEstructurasPig {
             return null;
         }
 
-        return new ValidadorTiposPig.TipoResuelto(tipoAtributo, 0);
+        return new ValidadorTiposPig.TipoResuelto(tipoAtributo, def.dimensionesDe(acceso.atributo()));
     }
 
     // HELPERS

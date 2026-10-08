@@ -15,8 +15,18 @@ public class TablaSimbolosPig {
     public record SimboloVariable(String nombre, String tipo, int dimensiones, Integer tamanoConocido,
                                   boolean esEstructura, boolean esObjeto, String tipoOriginal) {}
 
-    //definicion de una estructura importada .y
-    public record DefinicionEstructura(String nombre, Map<String, String> atributos) {}
+    //definicion de una estructura importada .y (dimensiones: 0 = escalar, 1 = arreglo)
+    public record DefinicionEstructura(String nombre, Map<String, String> atributos,
+                                       Map<String, Integer> dimensiones) {
+        // Constructor anterior, para no romper el código que ya lo usa.
+        public DefinicionEstructura(String nombre, Map<String, String> atributos) {
+            this(nombre, atributos, Map.of());
+        }
+
+        public int dimensionesDe(String atributo) {
+            return dimensiones.getOrDefault(atributo, 0);
+        }
+    }
 
     //definicion e una funcion importada .y
     public record DefinicionFuncion(String nombre, List<Parametro> parametros, String tipoRetorno) {}
@@ -112,9 +122,15 @@ public class TablaSimbolosPig {
     }
 
     //estructuras importadas de .y
+    public void declararEstructura(String nombre, Map<String, String> atributos,
+                                   Map<String, Integer> dimensiones) {
+        estructuras.put(nombre, new DefinicionEstructura(nombre, atributos, dimensiones));
+        registro.add(new EntradaSimbolo(siguienteId++, nombre, Categoria.ESTRUCTURA_DEF,
+                "estructura", atributos.size(), "importado", 1));
+    }
+
     public void declararEstructura(String nombre, Map<String, String> atributos) {
-        estructuras.put(nombre, new DefinicionEstructura(nombre, atributos));
-        registro.add(new EntradaSimbolo(siguienteId++, nombre, Categoria.ESTRUCTURA_DEF, "estructura", atributos.size(), "importado", 1));
+        declararEstructura(nombre, atributos, Map.of());
     }
 
     public Optional<DefinicionEstructura> buscarEstructura(String nombre) {

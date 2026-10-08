@@ -253,20 +253,26 @@ public sealed interface NodoSentencia extends NodoAST permits
             // Si ningún caso coincide: al 'siempre' o al fin
             g.emitir(new Salto(lSiempre));
 
-            // Cuerpos de los casos
+// 'romper' dentro del elegir salta a lFin; 'continuar' sigue siendo el del ciclo exterior.
+            ContextoCiclo cicloExterno = g.cicloActual();
+            int lContinuarExterno = (cicloExterno != null) ? cicloExterno.getEtiquetaContinuar() : -1;
+            g.entrarCiclo(new ContextoCiclo(lContinuarExterno, lFin));
+
+// Cuerpos de los casos
             for (int i = 0; i < casos.size(); i++) {
                 g.emitir(new DefinicionEtiqueta(etiquetasCasos[i]));
                 for (NodoSentencia s : casos.get(i).cuerpo()) s.aCodigoIntermedio(ctx);
                 g.emitir(new Salto(lFin));
             }
 
-            // Cuerpo 'siempre'
+// Cuerpo 'siempre'
             if (siempre != null) {
                 g.emitir(new DefinicionEtiqueta(lSiempre));
                 for (NodoSentencia s : siempre.cuerpo()) s.aCodigoIntermedio(ctx);
                 g.emitir(new Salto(lFin));
             }
 
+            g.salirCiclo();
             g.emitir(new DefinicionEtiqueta(lFin));
         }
     }

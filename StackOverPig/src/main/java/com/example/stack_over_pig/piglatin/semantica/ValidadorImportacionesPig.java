@@ -142,12 +142,14 @@ public class ValidadorImportacionesPig {
                 }
 
                 Map<String, String> atributos = new LinkedHashMap<>();
+                Map<String, Integer> dimensiones = new LinkedHashMap<>();
                 for (NodoAtributo a : e.atributos()) {
                     NodoAtributo.Atributo at = (NodoAtributo.Atributo) a;
                     String tipo = at.tipoPrimitivo() != null ? at.tipoPrimitivo() : at.tipoEstructura();
                     atributos.put(at.nombre(), tipoYaPig(tipo));
+                    dimensiones.put(at.nombre(), at.tamanoArreglo() > 0 ? 1 : 0);
                 }
-                tabla.declararEstructura(e.nombre(), atributos);
+                tabla.declararEstructura(e.nombre(), atributos, dimensiones);
             }
 
             for (NodoFuncion f : resultado.getPrograma().funciones()) {

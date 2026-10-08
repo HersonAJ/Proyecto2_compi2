@@ -60,7 +60,7 @@ listaExpr
     ;
 
 structInstancia
-    : ESTO ID DOSPUNTOS ID literalStruct
+    : ESTO ID DOSPUNTOS ID literalStruct PUNTOCOMA
     ;
 
 literalStruct

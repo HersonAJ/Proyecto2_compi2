@@ -113,8 +113,8 @@ public class ASTBuilderPig extends PigParserBaseVisitor<NodoAST> {
     /** 'esto x : Tipo { ... }'  ->  NodoSentencia.DeclaracionStruct. */
     @Override
     public NodoAST visitStructInstancia(PigParser.StructInstanciaContext ctx) {
-        String tipo = ctx.ID(0).getText();
-        String nombre = ctx.ID(1).getText();
+        String nombre = ctx.ID(0).getText();
+        String tipo = ctx.ID(1).getText();
 
         List<NodoExpr> inicializacion = new ArrayList<>();
         if (ctx.literalStruct() != null && ctx.literalStruct().listaExpr() != null) {
