@@ -162,44 +162,70 @@ public sealed interface NodoExpr extends NodoAST permits
     /** 'obj.campo'  ->  AccesoAtributo1 (con '->' si es objeto). */
     record AccesoAtributo(int linea, int columna, NodoExpr objeto, String atributo) implements NodoExpr {
         @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.ACCESO_ATRIBUTO; }
+
         @Override
         public AccesoMemoria aCodigoIntermedio(ContextoTraduccionPig ctx) {
             AccesoMemoria base = objeto.aCodigoIntermedio(ctx);
             boolean porPuntero = esBaseObjeto(ctx, objeto);
-
             String tipoCampo = obtenerTipoCampo(ctx, objeto, atributo);
             return new AccesoAtributo1(base, atributo, porPuntero, tipoCampo);
         }
 
-        /** True si la base es un objeto (clase de .z) y se accede con '->'. */
+        /** True si la base es un objeto (clase .z) y se accede con '->'. */
         private boolean esBaseObjeto(ContextoTraduccionPig ctx, NodoExpr baseExpr) {
+            // Caso 1: base es una variable.
             if (baseExpr instanceof Identificador id) {
                 return ctx.getTabla().buscarVariable(id.nombre())
                         .map(s -> s.esObjeto())
                         .orElse(false);
+            }
+            // Caso 2: base es otro acceso a atributo (ej. lista.cabeza).
+            if (baseExpr instanceof AccesoAtributo atr) {
+                String tipoCampo = obtenerTipoCampo(ctx, atr.objeto(), atr.atributo());
+                // Si el tipo del campo es una clase de .z -> es puntero -> '->'.
+                return ctx.getTabla().buscarClase(tipoCampo).isPresent();
             }
             return false;
         }
 
         /** Busca el tipo del campo en la estructura o clase correspondiente. */
         private String obtenerTipoCampo(ContextoTraduccionPig ctx, NodoExpr baseExpr, String campo) {
+            // Caso 1: base es una variable.
             if (baseExpr instanceof Identificador id) {
                 var v = ctx.getTabla().buscarVariable(id.nombre());
                 if (v.isEmpty()) return "numerus";
                 var simbolo = v.get();
                 String tipoBase = simbolo.tipo();
 
-                // Si es struct de .y
+                // Struct de .y
                 var est = ctx.getTabla().buscarEstructura(tipoBase);
                 if (est.isPresent()) {
                     String tipoCampo = est.get().atributos().get(campo);
                     if (tipoCampo != null) return tipoCampo;
                 }
-                // Si es clase de .z
+                // Clase de .z
                 var clase = ctx.getTabla().buscarClase(tipoBase);
                 if (clase.isPresent()) {
                     var atr = clase.get().atributos().get(campo);
                     if (atr != null) return atr.tipo();
+                }
+            }
+            // Caso 2: base es otro acceso a atributo (ej. lista.cabeza).
+            if (baseExpr instanceof AccesoAtributo atr) {
+                String tipoIntermedio = obtenerTipoCampo(ctx, atr.objeto(), atr.atributo());
+                if (tipoIntermedio == null) return "numerus";
+
+                // Struct de .y
+                var est = ctx.getTabla().buscarEstructura(tipoIntermedio);
+                if (est.isPresent()) {
+                    String tipoCampo = est.get().atributos().get(campo);
+                    if (tipoCampo != null) return tipoCampo;
+                }
+                // Clase de .z
+                var clase = ctx.getTabla().buscarClase(tipoIntermedio);
+                if (clase.isPresent()) {
+                    var at = clase.get().atributos().get(campo);
+                    if (at != null) return at.tipo();
                 }
             }
             return "numerus";
@@ -457,11 +483,29 @@ public sealed interface NodoExpr extends NodoAST permits
                                     List<String> tiposArgs) {
         if (params.size() != tiposArgs.size()) return false;
         for (int i = 0; i < params.size(); i++) {
-            if (!params.get(i).tipo().equals(tiposArgs.get(i))) return false;
+            TablaSimbolosPig.Parametro p = params.get(i);
+            String tipoParamC = tipoPigAC(p.tipo(), p.dimensiones());
+            String tipoArgC = tipoPigAC(tiposArgs.get(i), 0);
+            if (!tipoParamC.equals(tipoArgC)) return false;
         }
         return true;
     }
 
+    /**
+     * Normaliza un tipo (en nomenclatura .pig o ya en C) a su forma C canónica.
+     * Acepta tanto "numerus" como "int" y los mapea a lo mismo.
+     */
+    private static String tipoPigAC(String tipo, int dimensiones) {
+        // Si ya viene en formato C, lo dejamos tal cual.
+        if (tipo.startsWith("struct ") || tipo.equals("int") || tipo.equals("float")
+                || tipo.equals("char") || tipo.equals("double") || tipo.equals("char*")) {
+            return tipo + "*".repeat(dimensiones);
+        }
+        // Si viene en nomenclatura .pig, traducimos.
+        boolean esObjeto = !TipoPigC.esPrimitivo(tipo) && dimensiones == 0;
+        String base = TipoPigC.baseAC(tipo, esObjeto);
+        return base + "*".repeat(dimensiones);
+    }
     /** Traduce un tipo de .pig a su nomenclatura en .z. */
     private static String tipoPigAZ(String tipoPig) {
         return switch (tipoPig) {

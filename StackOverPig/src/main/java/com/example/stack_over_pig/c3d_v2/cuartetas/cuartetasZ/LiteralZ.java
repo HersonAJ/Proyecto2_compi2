@@ -27,7 +27,7 @@ public class LiteralZ extends AccesoMemoria {
     @Override
     public void aCodigoC(StringBuilder sb) {
         switch (tipo) {
-            case "String"  -> sb.append('"').append(valor).append('"');
+            case "String", "char*" -> sb.append('"').append(valor).append('"');
             case "char"    -> sb.append('\'').append(valor).append('\'');
             case "boolean" -> sb.append(((Boolean) valor) ? 1 : 0);
             default        -> sb.append(valor);   // int, double

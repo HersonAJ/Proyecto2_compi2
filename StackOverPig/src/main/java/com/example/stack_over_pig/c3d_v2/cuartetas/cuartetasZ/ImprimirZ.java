@@ -27,11 +27,11 @@ public class ImprimirZ extends Cuarteta {
 
     private String formato() {
         String base = switch (tipo) {
-            case "double"  -> "%f";
-            case "char"    -> "%c";
-            case "boolean" -> "%d";
-            case "String"  -> "%s";
-            default        -> "%d";   // int
+            case "double"          -> "%f";
+            case "char"            -> "%c";
+            case "boolean"         -> "%d";
+            case "String", "char*" -> "%s";
+            default                -> "%d";   // int
         };
         return saltoDeLinea ? base + "\\n" : base;
     }

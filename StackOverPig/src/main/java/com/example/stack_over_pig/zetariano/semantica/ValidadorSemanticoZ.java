@@ -27,7 +27,18 @@ public class ValidadorSemanticoZ {
     private final ValidadorTiposZ tipos = new ValidadorTiposZ(tabla, errores);
     private String tipoRetornoActual;
 
+
     public List<ErrorSemantico> analizar(NodoPrograma programa) {
+        return analizar(programa, java.util.Map.of());
+    }
+
+    public List<ErrorSemantico> analizar(NodoPrograma programa,
+                                         java.util.Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas) {
+        // Registrar clases externas ANTES que todo
+        if (externas != null) {
+            externas.values().forEach(tabla::registrarClaseExterna);
+        }
+
         NodoClase clase = programa.clase();
 
         declaraciones.declararClase(clase);

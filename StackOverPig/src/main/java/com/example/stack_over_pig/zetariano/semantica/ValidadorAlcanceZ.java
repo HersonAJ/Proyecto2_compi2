@@ -75,11 +75,11 @@ public class ValidadorAlcanceZ {
 
             case INSTANCIA_OBJETO -> {
                 NodoExpr.InstanciaObjeto instancia = (NodoExpr.InstanciaObjeto) expr;
-                if (!instancia.tipoClase().equals(tabla.getNombreClase())) {
-                    errores.add(new ErrorSemantico(instancia.linea(), instancia.columna(), "Clase no declarada",
+                if (!tabla.esClaseConocida(instancia.tipoClase())) {   // ← era .equals(tabla.getNombreClase())
+                    errores.add(new ErrorSemantico(instancia.linea(), instancia.columna(),
+                            "Clase no declarada",
                             "'" + instancia.tipoClase() + "' no corresponde a ninguna clase conocida"));
                 }
-
                 for (NodoExpr arg : instancia.argumentos()) resolverExpresion(arg);
             }
 
@@ -111,10 +111,9 @@ public class ValidadorAlcanceZ {
 
     /** Valida que un tipo sea primitivo o la clase conocida. */
     public void validarTipoDeclarado(String tipo, int linea, int columna) {
-        if (tipo == null) return; // tipo void en un metodo, no aplica
+        if (tipo == null) return;
         if (PRIMITIVOS.contains(tipo)) return;
-        if (tipo.equals(tabla.getNombreClase())) return;
-
+        if (tabla.esClaseConocida(tipo)) return;   // ← era tipo.equals(tabla.getNombreClase())
         errores.add(new ErrorSemantico(linea, columna,
                 "Clase no declarada",
                 "'" + tipo + "' no corresponde a ningún tipo primitivo ni a la clase conocida"));

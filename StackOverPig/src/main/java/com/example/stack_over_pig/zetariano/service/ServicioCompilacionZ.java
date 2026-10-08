@@ -3,8 +3,7 @@ package com.example.stack_over_pig.zetariano.service;
 import com.example.stack_over_pig.y.errores.ErrorPosicional;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 import com.example.stack_over_pig.zetariano.Builder.ASTBuilderZ;
-import com.example.stack_over_pig.zetariano.nodo.NodoAST;
-import com.example.stack_over_pig.zetariano.nodo.NodoPrograma;
+import com.example.stack_over_pig.zetariano.nodo.*;
 import com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ;
 import com.example.stack_over_pig.zetariano.semantica.ValidadorSemanticoZ;
 import com.example.zetariano.analizador.gramatica.ZLexer;
@@ -17,6 +16,11 @@ import java.util.List;
 public class ServicioCompilacionZ {
 
     public ResultadoCompilacionZ analizar(String codigoFuente) {
+        return analizar(codigoFuente, java.util.Map.of());
+    }
+
+    public ResultadoCompilacionZ analizar(String codigoFuente,
+                                          java.util.Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas) {
 
         if (codigoFuente == null || codigoFuente.trim().isEmpty()) {
             return new ResultadoCompilacionZ(
@@ -27,7 +31,7 @@ public class ServicioCompilacionZ {
         }
 
         try {
-            return analizarInterno(codigoFuente);
+            return analizarInterno(codigoFuente, externas);
         } catch (StackOverflowError soe) {
             return new ResultadoCompilacionZ(
                     false, null, null, null,
@@ -43,7 +47,8 @@ public class ServicioCompilacionZ {
         }
     }
 
-    private ResultadoCompilacionZ analizarInterno(String codigoFuente) {
+    private ResultadoCompilacionZ analizarInterno(String codigoFuente,
+                                                  java.util.Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas) {
 
         // 1. LEXER (Z no necesita preprocesador de indentacion: usa llaves y ';' como Java)
         List<ErrorPosicional> erroresLexicos = new ArrayList<>();
@@ -126,7 +131,7 @@ public class ServicioCompilacionZ {
         ValidadorSemanticoZ validador = new ValidadorSemanticoZ();
         List<ErrorSemantico> erroresSemanticos;
         try {
-            erroresSemanticos = validador.analizar(programa);
+            erroresSemanticos = validador.analizar(programa, externas);
         } catch (Exception e) {
             return new ResultadoCompilacionZ(
                     false, programa, codigoFuente, null,
@@ -149,5 +154,92 @@ public class ServicioCompilacionZ {
                 erroresSemanticos,
                 List.of()
         );
+    }
+
+    /**
+     * Parsea un archivo .z y extrae SOLO las firmas (atributos, constructores, métodos)
+     * sin ejecutar ninguna validación semántica. Devuelve Optional.empty() si el archivo
+     * no parsea o el AST no es un NodoPrograma.
+     */
+    public static java.util.Optional<TablaSimbolosZ.DefinicionClaseExterna>
+    recolectarFirmas(String codigoFuente) {
+        if (codigoFuente == null || codigoFuente.trim().isEmpty()) return java.util.Optional.empty();
+
+        try {
+            // 1. Lexer (silencioso: si hay errores, abortamos)
+            ZLexer lexer = new ZLexer(CharStreams.fromString(codigoFuente));
+            lexer.removeErrorListeners();
+            final boolean[] huboError = {false};
+            lexer.addErrorListener(new BaseErrorListener() {
+                @Override public void syntaxError(Recognizer<?, ?> r, Object s,
+                                                  int l, int c, String m, RecognitionException e) {
+                    huboError[0] = true;
+                }
+            });
+
+            CommonTokenStream tokens = new CommonTokenStream(lexer);
+            tokens.fill();
+            if (huboError[0]) return java.util.Optional.empty();
+
+            // 2. Parser (silencioso)
+            ZParser parser = new ZParser(tokens);
+            parser.removeErrorListeners();
+            parser.addErrorListener(new BaseErrorListener() {
+                @Override public void syntaxError(Recognizer<?, ?> r, Object s,
+                                                  int l, int c, String m, RecognitionException e) {
+                    huboError[0] = true;
+                }
+            });
+
+            ParserRuleContext tree;
+            try {
+                tree = parser.programa();
+            } catch (Exception e) {
+                return java.util.Optional.empty();
+            }
+            if (huboError[0]) return java.util.Optional.empty();
+
+            // 3. AST
+            ASTBuilderZ builder = new ASTBuilderZ();
+            NodoAST nodo = builder.visit(tree);
+            if (!(nodo instanceof NodoPrograma np)) return java.util.Optional.empty();
+
+            NodoClase clase = np.clase();
+
+            // 4. Construir DefinicionClaseExterna
+            java.util.Map<String, TablaSimbolosZ.SimboloAtributo> atributos = new java.util.LinkedHashMap<>();
+            for (NodoAtributoZ a : clase.atributos()) {
+                atributos.put(a.nombre(),
+                        new TablaSimbolosZ.SimboloAtributo(a.nombre(), a.tipo(), a.dimensiones()));
+            }
+
+            java.util.Map<String, java.util.List<TablaSimbolosZ.Firma>> constructores = new java.util.LinkedHashMap<>();
+            for (NodoConstructor c : clase.constructores()) {
+                java.util.List<TablaSimbolosZ.Parametro> params = new java.util.ArrayList<>();
+                for (NodoParametroZ p : c.parametros()) {
+                    params.add(new TablaSimbolosZ.Parametro(p.nombre(), p.tipo(), 0));
+                }
+                constructores
+                        .computeIfAbsent(c.nombre(), k -> new java.util.ArrayList<>())
+                        .add(new TablaSimbolosZ.Firma(c.nombre(), params, null));
+            }
+
+            java.util.Map<String, java.util.List<TablaSimbolosZ.Firma>> metodos = new java.util.LinkedHashMap<>();
+            for (NodoMetodo m : clase.metodos()) {
+                java.util.List<TablaSimbolosZ.Parametro> params = new java.util.ArrayList<>();
+                for (NodoParametroZ p : m.parametros()) {
+                    params.add(new TablaSimbolosZ.Parametro(p.nombre(), p.tipo(), 0));
+                }
+                metodos
+                        .computeIfAbsent(m.nombre(), k -> new java.util.ArrayList<>())
+                        .add(new TablaSimbolosZ.Firma(m.nombre(), params, m.tipoRetorno()));
+            }
+
+            return java.util.Optional.of(new TablaSimbolosZ.DefinicionClaseExterna(
+                    clase.nombre(), atributos, constructores, metodos));
+
+        } catch (Exception e) {
+            return java.util.Optional.empty();
+        }
     }
 }

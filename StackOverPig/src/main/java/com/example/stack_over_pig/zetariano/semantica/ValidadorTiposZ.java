@@ -117,14 +117,16 @@ public class ValidadorTiposZ {
                 TipoResuelto tipoObjeto = tipoDeExpresion(acceso.objeto());
                 if (tipoObjeto == null) yield null;
 
-                if (!tipoObjeto.base().equals(tabla.getNombreClase())) {
+                if (!tabla.esClaseConocida(tipoObjeto.base())) {   // ← era .equals(tabla.getNombreClase())
                     errores.add(new ErrorSemantico(acceso.linea(), acceso.columna(),
                             "Acceso invalido",
-                            "No se puede acceder a '" + acceso.atributo() + "' porque '" + tipoObjeto.base() + "' no es un objeto"));
+                            "No se puede acceder a '" + acceso.atributo() + "' porque '"
+                                    + tipoObjeto.base() + "' no es un objeto"));
                     yield null;
                 }
 
-                Optional<TablaSimbolosZ.SimboloAtributo> atributo = tabla.buscarAtributo(acceso.atributo());
+                Optional<TablaSimbolosZ.SimboloAtributo> atributo =
+                        tabla.buscarAtributoEn(tipoObjeto.base(), acceso.atributo());   // ← antes buscarAtributo
                 if (atributo.isEmpty()) {
                     errores.add(new ErrorSemantico(acceso.linea(), acceso.columna(),
                             "Atributo no declarado",
@@ -216,25 +218,31 @@ public class ValidadorTiposZ {
                 List<TipoResuelto> tiposArgs = llamada.argumentos().stream().map(this::tipoDeExpresion).toList();
                 if (tipoObjeto == null) yield null;
 
-                if (!tipoObjeto.base().equals(tabla.getNombreClase())) {
+                if (!tabla.esClaseConocida(tipoObjeto.base())) {   // ← era .equals(tabla.getNombreClase())
                     errores.add(new ErrorSemantico(llamada.linea(), llamada.columna(),
                             "Acceso invalido",
-                            "No se puede llamar a '" + llamada.nombre() + "' porque '" + tipoObjeto.base() + "' no es un objeto"));
+                            "No se puede llamar a '" + llamada.nombre() + "' porque '"
+                                    + tipoObjeto.base() + "' no es un objeto"));
                     yield null;
                 }
 
-                TablaSimbolosZ.Firma firma = resolverSobrecarga(tabla.getMetodos(llamada.nombre()), tiposArgs,
-                        llamada.linea(), llamada.columna(), llamada.nombre(), "Metodo");
-                yield firma == null || firma.tipoRetorno() == null ? null : new TipoResuelto(firma.tipoRetorno(), 0);
+                TablaSimbolosZ.Firma firma = resolverSobrecarga(
+                        tabla.getMetodosDe(tipoObjeto.base(), llamada.nombre()),   // ← antes getMetodos
+                        tiposArgs, llamada.linea(), llamada.columna(), llamada.nombre(), "Metodo");
+                yield firma == null || firma.tipoRetorno() == null
+                        ? null
+                        : new TipoResuelto(firma.tipoRetorno(), 0);
             }
 
             case INSTANCIA_OBJETO -> {
                 NodoExpr.InstanciaObjeto instancia = (NodoExpr.InstanciaObjeto) expr;
-                if (!instancia.tipoClase().equals(tabla.getNombreClase())) yield null;
+                if (!tabla.esClaseConocida(instancia.tipoClase())) yield null;   // ← era .equals(tabla.getNombreClase())
 
                 List<TipoResuelto> tiposArgs = instancia.argumentos().stream().map(this::tipoDeExpresion).toList();
-                resolverSobrecarga(tabla.getConstructores(instancia.tipoClase()), tiposArgs,
-                        instancia.linea(), instancia.columna(), instancia.tipoClase(), "Constructor");
+                resolverSobrecarga(
+                        tabla.getConstructoresDe(instancia.tipoClase()),   // ← antes getConstructores
+                        tiposArgs, instancia.linea(), instancia.columna(),
+                        instancia.tipoClase(), "Constructor");
                 yield new TipoResuelto(instancia.tipoClase(), 0);
             }
 

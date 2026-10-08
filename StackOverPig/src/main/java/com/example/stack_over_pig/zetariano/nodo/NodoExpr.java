@@ -156,13 +156,16 @@ public sealed interface NodoExpr extends NodoAST permits
         @Override
         public AccesoMemoria aCodigoIntermedio(ContextoTraduccionZ ctx) {
             AccesoMemoria base = objeto.aCodigoIntermedio(ctx);
-            String tipoCampo = obtenerTipoCampo(ctx, atributo);
+            String tipoCampo = obtenerTipoCampo(ctx, base.getTipo(), atributo);
             return new AccesoAtributo1(base, atributo, true, tipoCampo);
         }
 
-        /** Busca el tipo del campo en la clase actual. */
-        private String obtenerTipoCampo(ContextoTraduccionZ ctx, String campo) {
-            var attr = ctx.getTabla().buscarAtributo(campo);
+        private String obtenerTipoCampo(ContextoTraduccionZ ctx, String tipoObjeto, String campo) {
+            String clase = tipoObjeto;
+            if (clase.startsWith("struct ")) clase = clase.substring("struct ".length());
+            if (clase.endsWith("*")) clase = clase.substring(0, clase.length() - 1);
+
+            var attr = ctx.getTabla().buscarAtributoEn(clase, campo);
             if (attr.isPresent()) return attr.get().tipo();
             return "int";
         }
@@ -179,11 +182,12 @@ public sealed interface NodoExpr extends NodoAST permits
             AccesoMemoria izq = izquierda.aCodigoIntermedio(ctx);
             AccesoMemoria der = derecha.aCodigoIntermedio(ctx);
 
-            boolean hayString = "String".equals(izq.getTipo()) || "String".equals(der.getTipo());
+            boolean hayString = "char*".equals(izq.getTipo()) || "char*".equals(der.getTipo())
+                    || "String".equals(izq.getTipo()) || "String".equals(der.getTipo());
             // Caso especial: '+' con String -> concatenación
             if ("+".equals(operador) && hayString) {
-                int idT = g.getContador().siguienteTemporal("String");
-                AccesoTemporal t = new AccesoTemporal(idT, "String");
+                int idT = g.getContador().siguienteTemporal("char*");
+                AccesoTemporal t = new AccesoTemporal(idT, "char*");
                 g.emitir(new OperacionBinaria(t, izq, "concat", der));
                 return t;
             }
@@ -199,6 +203,7 @@ public sealed interface NodoExpr extends NodoAST permits
                 g.emitir(new OperacionBinaria(tRes, tCmp, operador, new LiteralZ(0, "int")));
                 return tRes;
             }
+
             PromocionTiposZ.Resultado prom = PromocionTiposZ.promover(izq.getTipo(), der.getTipo());
 
             if (prom.conversionIzq() != null) {
@@ -214,13 +219,29 @@ public sealed interface NodoExpr extends NodoAST permits
                 der = tConv;
             }
 
-            int idT = g.getContador().siguienteTemporal(prom.tipoResultado());
-            AccesoTemporal t = new AccesoTemporal(idT, prom.tipoResultado());
+            // El tipo del resultado depende del operador:
+            //   - comparación y lógicos  -> int (booleano en C)
+            //   - aritméticos            -> el de la promoción
+            String tipoResultado;
+            if (esOperadorBooleano(operador)) {
+                tipoResultado = "int";
+            } else {
+                tipoResultado = prom.tipoResultado();
+            }
+
+            int idT = g.getContador().siguienteTemporal(tipoResultado);
+            AccesoTemporal t = new AccesoTemporal(idT, tipoResultado);
             g.emitir(new OperacionBinaria(t, izq, operador, der));
             return t;
         }
-    }
 
+        private static boolean esOperadorBooleano(String op) {
+            return switch (op) {
+                case "==", "!=", "<", ">", "<=", ">=", "&&", "||" -> true;
+                default -> false;
+            };
+        }
+    }
     /** '-x', '!x'  ->  OperacionUnaria con temporal. */
     record Unaria(int linea, int columna, String operador, NodoExpr operando) implements NodoExpr {
         @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.UNARIA; }
@@ -337,9 +358,9 @@ public sealed interface NodoExpr extends NodoAST permits
                 g.emitir(new Llamada(null, nombreC, juntarThisConArgs(thisAcc, args)));
                 return null;
             } else {
-                int idT = g.getContador().siguienteTemporal(tipoRetorno);
-                AccesoTemporal t = new AccesoTemporal(idT, tipoRetorno);
-
+                String tipoRetornoC = tipoZAC(tipoRetorno);
+                int idT = g.getContador().siguienteTemporal(tipoRetornoC);
+                AccesoTemporal t = new AccesoTemporal(idT, tipoRetornoC);
                 AccesoVariable thisAcc = new AccesoVariable("this",
                         "struct " + ctx.getNombreClase() + "*");
                 g.emitir(new Llamada(t, nombreC, juntarThisConArgs(thisAcc, args)));
@@ -405,8 +426,11 @@ public sealed interface NodoExpr extends NodoAST permits
                 g.emitir(new LlamadaMetodo1(null, receptorAcc, nombreC, args));
                 return null;
             } else {
-                int idT = g.getContador().siguienteTemporal(tipoRetorno);
-                AccesoTemporal t = new AccesoTemporal(idT, tipoRetorno);
+
+                String tipoRetornoC = tipoZAC(tipoRetorno);
+                int idT = g.getContador().siguienteTemporal(tipoRetornoC);
+                AccesoTemporal t = new AccesoTemporal(idT, tipoRetornoC);
+
                 g.emitir(new LlamadaMetodo1(t, receptorAcc, nombreC, args));
                 return t;
             }
@@ -517,5 +541,11 @@ public sealed interface NodoExpr extends NodoAST permits
             }
             return t;
         }
+    }
+
+    private static String tipoZAC(String tipoZ) {
+        if (tipoZ == null) return "void";
+        if (TipoCZ.esPrimitivo(tipoZ)) return TipoCZ.baseValorAC(tipoZ);
+        return "struct " + tipoZ + "*";
     }
 }

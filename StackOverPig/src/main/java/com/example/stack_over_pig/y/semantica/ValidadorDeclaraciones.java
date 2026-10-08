@@ -71,8 +71,12 @@ public class ValidadorDeclaraciones {
         for (NodoParametro p : funcion.parametros()) {
             NodoParametro.Parametro param = (NodoParametro.Parametro) p;
             String tipo = param.tipoPrimitivo() != null ? param.tipoPrimitivo() : param.tipoEstructura();
+
+            // Los parámetros de tipo estructura y los arreglos se pasan por referencia.
+            boolean esReferencia = param.esEstructura() || param.esArreglo();
+
             tabla.declararVariable(param.nombre(), tipo, param.esArreglo(), param.esArreglo() ? 1 : 0,
-                    param.esEstructura(), param.tipoEstructura(), List.of());
+                    param.esEstructura(), param.tipoEstructura(), List.of(), esReferencia);
         }
     }
 

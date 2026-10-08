@@ -7,6 +7,7 @@ import com.example.stack_over_pig.y.errores.ErrorPosicional;
 import com.example.stack_over_pig.y.errores.ResultadoCompilacionY;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 import com.example.stack_over_pig.y.service.ServicioCompilacionY;
+import com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ;
 import com.example.stack_over_pig.zetariano.service.ResultadoCompilacionZ;
 import com.example.stack_over_pig.zetariano.service.ServicioCompilacionZ;
 import javafx.scene.control.Label;
@@ -315,7 +316,11 @@ public class VentanaPrincipal {
     private void analizarZ(EditorCodigo editor) {
         panelSalida.imprimirConsola("Analizando " + editor.getArchivoActual().getName() + " como .z");
 
-        ResultadoCompilacionZ resultado = servicioZ.analizar(editor.getTexto());
+        File raiz = obtenerCarpetaRaiz(editor);
+        java.util.Map<String, com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ.DefinicionClaseExterna>
+                externas = recolectarFirmasZ(editor.getArchivoActual(), raiz);
+
+        ResultadoCompilacionZ resultado = servicioZ.analizar(editor.getTexto(), externas);
 
         for (ErrorPosicional e : resultado.getErroresLexicos()) {
             panelSalida.agregarError("Léxico", e.getLinea(), e.getColumna(), e.getMensaje());
@@ -511,5 +516,59 @@ public class VentanaPrincipal {
         l.setMaxHeight(Double.MAX_VALUE);
         l.setStyle("-fx-alignment: center; -fx-text-fill: #888; -fx-border-color: #ccc;");
         return l;
+    }
+
+    private java.util.Map<String, TablaSimbolosZ.DefinicionClaseExterna>
+    recolectarFirmasVecinas(File archivoActual) {
+        java.util.Map<String, TablaSimbolosZ.DefinicionClaseExterna> resultado = new java.util.LinkedHashMap<>();
+        if (archivoActual == null) return resultado;
+
+        File dir = archivoActual.getParentFile();
+        if (dir == null || !dir.isDirectory()) return resultado;
+
+        File[] archivos = dir.listFiles((d, n) -> n.toLowerCase().endsWith(".z"));
+        if (archivos == null) return resultado;
+
+        for (File f : archivos) {
+            if (f.equals(archivoActual)) continue;   // saltar el archivo activo
+            GestorArchivos.leerArchivo(f).ifPresent(contenido ->
+                    ServicioCompilacionZ.recolectarFirmas(contenido)
+                            .ifPresent(def -> resultado.put(def.nombre(), def)));
+        }
+        return resultado;
+    }
+
+    /**
+     * Recolecta recursivamente las firmas de todos los .z bajo 'raizProyecto',
+     * excluyendo el archivo activo (que ya se está analizando con el texto del editor).
+     * Devuelve un mapa nombre-de-clase -> DefinicionClaseExterna.
+     * Si 'raizProyecto' es null o no es directorio, devuelve un mapa vacío.
+     */
+    private java.util.Map<String,
+            com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ.DefinicionClaseExterna>
+    recolectarFirmasZ(File archivoActivo, File raizProyecto) {
+
+        java.util.Map<String,
+                com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ.DefinicionClaseExterna>
+                resultado = new java.util.LinkedHashMap<>();
+
+        if (raizProyecto == null || !raizProyecto.isDirectory()) return resultado;
+
+        java.nio.file.Path raizPath = raizProyecto.toPath();
+
+        try (java.util.stream.Stream<java.nio.file.Path> stream = java.nio.file.Files.walk(raizPath)) {
+            stream.filter(p -> p.toString().toLowerCase().endsWith(".z"))
+                    .filter(p -> archivoActivo == null
+                            || !p.toAbsolutePath().normalize()
+                            .equals(archivoActivo.toPath().toAbsolutePath().normalize()))
+                    .forEach(p -> GestorArchivos.leerArchivo(p.toFile())
+                            .flatMap(ServicioCompilacionZ::recolectarFirmas)
+                            .ifPresent(def -> resultado.put(def.nombre(), def)));
+        } catch (java.io.IOException e) {
+            panelSalida.imprimirConsola(
+                    "Advertencia: no se pudieron recorrer todas las .z del proyecto: " + e.getMessage());
+        }
+
+        return resultado;
     }
 }

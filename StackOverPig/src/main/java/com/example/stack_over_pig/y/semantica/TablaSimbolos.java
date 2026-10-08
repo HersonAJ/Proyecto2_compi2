@@ -13,7 +13,8 @@ public class TablaSimbolos {
 
     //tamanos: 1 elemento para arreglo 1D ([n]), 2 elementos para matriz ([n][m]); vacio si no es arreglo/matriz
     public record SimboloVariable(String nombre, String tipo, boolean esArreglo, int dimensiones,
-                                  boolean esEstructura, String tipoEstructura, List<Integer> tamanos) {}
+                                  boolean esEstructura, String tipoEstructura, List<Integer> tamanos,
+                                  boolean esReferencia) {}
 
     public record DefinicionEstructura(String nombre, Map<String, String> atributos) {}
     public record DefinicionFuncion(String nombre, List<Parametro> parametros, String tipoRetorno) {
@@ -73,19 +74,25 @@ public class TablaSimbolos {
 
     //declara una variable primitiva simple en el scope actual / devuelve false si ya existe un simbolo con ese nombre en el scope
     public boolean declararVariable(String nombre, String tipo) {
-        return declararVariable(nombre, tipo, false, 0, false, null, List.of());
+        return declararVariable(nombre, tipo, false, 0, false, null, List.of(), false);
     }
 
-    //declara una variable completa (variable simple, arreglo 1D, matriz o instancia de estructura)
     public boolean declararVariable(String nombre, String tipo, boolean esArreglo, int dimensiones,
                                     boolean esEstructura, String tipoEstructura, List<Integer> tamanos) {
+        return declararVariable(nombre, tipo, esArreglo, dimensiones,
+                esEstructura, tipoEstructura, tamanos, false);
+    }
+
+    public boolean declararVariable(String nombre, String tipo, boolean esArreglo, int dimensiones,
+                                    boolean esEstructura, String tipoEstructura, List<Integer> tamanos,
+                                    boolean esReferencia) {
         Scope actual = pila.peek();
         if (actual.variables.containsKey(nombre)) {
-            return false; //duplicada en el mismo scope
+            return false;
         }
 
         SimboloVariable simbolo = new SimboloVariable(
-                nombre, tipo, esArreglo, dimensiones, esEstructura, tipoEstructura, tamanos);
+                nombre, tipo, esArreglo, dimensiones, esEstructura, tipoEstructura, tamanos, esReferencia);
         actual.variables.put(nombre, simbolo);
 
         Categoria categoria = esArreglo ? Categoria.ARREGLO : Categoria.VARIABLE;

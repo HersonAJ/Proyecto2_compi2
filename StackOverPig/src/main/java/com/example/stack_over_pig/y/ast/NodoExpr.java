@@ -140,11 +140,19 @@ public sealed interface NodoExpr extends NodoAST permits
         @Override
         public AccesoMemoria aCodigoIntermedio(ContextoTraduccion ctx) {
             AccesoMemoria base = objeto.aCodigoIntermedio(ctx);
-
-            // Tipo del campo: lo buscamos en la estructura.
             String tipoCampo = obtenerTipoCampo(ctx, objeto, atributo);
+            boolean porPuntero = esBaseReferencia(ctx, objeto);
+            return new AccesoAtributo1(base, atributo, porPuntero, tipoCampo);
+        }
 
-            return new AccesoAtributo1(base, atributo, false, tipoCampo);
+        private boolean esBaseReferencia(ContextoTraduccion ctx, NodoExpr baseExpr) {
+            if (baseExpr instanceof Identificador id) {
+                var varOpt = ctx.getTabla().buscarVariable(id.nombre());
+                if (varOpt.isEmpty()) return false;
+                var simbolo = varOpt.get();
+                return simbolo.esEstructura() && simbolo.esReferencia();
+            }
+            return false;
         }
 
         private String obtenerTipoCampo(ContextoTraduccion ctx, NodoExpr baseExpr, String campo) {

@@ -158,7 +158,15 @@ public class TablaSimbolosZ {
 
     /** Resuelve cual sobrecarga de constructor aplica segun la cantidad y tipos de argumentos dados. */
     public Optional<Firma> buscarConstructor(String nombre, List<String> tiposArgumentos) {
-        return buscarFirma(constructores.get(nombre), tiposArgumentos);
+        Optional<Firma> local = buscarFirma(constructores.get(nombre), tiposArgumentos);
+        if (local.isPresent()) return local;
+        // Buscar en clases externas
+        for (DefinicionClaseExterna def : clasesExternas.values()) {
+            List<Firma> firmas = def.constructores().get(nombre);
+            Optional<Firma> externa = buscarFirma(firmas, tiposArgumentos);
+            if (externa.isPresent()) return externa;
+        }
+        return Optional.empty();
     }
 
     public List<Firma> getConstructores(String nombre) {
@@ -179,7 +187,15 @@ public class TablaSimbolosZ {
     }
 
     public Optional<Firma> buscarMetodo(String nombre, List<String> tiposArgumentos) {
-        return buscarFirma(metodos.get(nombre), tiposArgumentos);
+        Optional<Firma> local = buscarFirma(metodos.get(nombre), tiposArgumentos);
+        if (local.isPresent()) return local;
+        // Buscar en clases externas
+        for (DefinicionClaseExterna def : clasesExternas.values()) {
+            List<Firma> firmas = def.metodos().get(nombre);
+            Optional<Firma> externa = buscarFirma(firmas, tiposArgumentos);
+            if (externa.isPresent()) return externa;
+        }
+        return Optional.empty();
     }
 
     public List<Firma> getMetodos(String nombre) {
@@ -213,5 +229,59 @@ public class TablaSimbolosZ {
     // UI / DEPURACION
     public List<EntradaSimbolo> getRegistroCompleto() {
         return Collections.unmodifiableList(registro);
+    }
+
+    // CLASES EXTERNAS (para resolver referencias cruzadas entre archivos .z)
+
+    /**
+     * Definición "resumida" de una clase .z externa al archivo actual.
+     * No es la clase completa (no tiene cuerpos de métodos), solo lo necesario
+     * para resolver tipos, accesos a atributos y sobrecarga de métodos/constructores.
+     */
+    public record DefinicionClaseExterna(
+            String nombre,
+            Map<String, SimboloAtributo> atributos,
+            Map<String, List<Firma>> constructores,
+            Map<String, List<Firma>> metodos) {}
+
+    private final Map<String, DefinicionClaseExterna> clasesExternas = new LinkedHashMap<>();
+
+    public void registrarClaseExterna(DefinicionClaseExterna def) {
+        clasesExternas.put(def.nombre(), def);
+    }
+
+    public Optional<DefinicionClaseExterna> buscarClaseExterna(String nombre) {
+        return Optional.ofNullable(clasesExternas.get(nombre));
+    }
+
+    /** true si 'nombre' es la clase del archivo actual o una clase externa registrada. */
+    public boolean esClaseConocida(String nombre) {
+        if (nombre == null) return false;
+        return nombre.equals(nombreClase) || clasesExternas.containsKey(nombre);
+    }
+
+    /** Busca un atributo en la clase actual o en una clase externa. */
+    public Optional<SimboloAtributo> buscarAtributoEn(String clase, String atributo) {
+        if (clase == null) return Optional.empty();
+        if (clase.equals(nombreClase)) return buscarAtributo(atributo);
+        return buscarClaseExterna(clase).map(d -> d.atributos().get(atributo));
+    }
+
+    /** Métodos de una clase (actual o externa) con ese nombre. */
+    public List<Firma> getMetodosDe(String clase, String nombreMetodo) {
+        if (clase == null) return List.of();
+        if (clase.equals(nombreClase)) return getMetodos(nombreMetodo);
+        return buscarClaseExterna(clase)
+                .map(d -> d.metodos().getOrDefault(nombreMetodo, List.of()))
+                .orElse(List.of());
+    }
+
+    /** Constructores de una clase (actual o externa). */
+    public List<Firma> getConstructoresDe(String clase) {
+        if (clase == null) return List.of();
+        if (clase.equals(nombreClase)) return getConstructores(clase);
+        return buscarClaseExterna(clase)
+                .map(d -> d.constructores().getOrDefault(clase, List.of()))
+                .orElse(List.of());
     }
 }

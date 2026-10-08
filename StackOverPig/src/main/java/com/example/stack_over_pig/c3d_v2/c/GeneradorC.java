@@ -41,10 +41,57 @@ public class GeneradorC {
 
         // Función auxiliar para concatenar cadenas.
         sb.append("char* concat(char* a, char* b) {\n");
+
+        // Helpers de conversión a string para concatenación.
+        sb.append("char* z_to_string_int(int x) {\n");
+        sb.append("    char* buf = (char*) malloc(32);\n");
+        sb.append("    sprintf(buf, \"%d\", x);\n");
+        sb.append("    return buf;\n");
+        sb.append("}\n\n");
+
+        sb.append("char* z_to_string_double(double x) {\n");
+        sb.append("    char* buf = (char*) malloc(32);\n");
+        sb.append("    sprintf(buf, \"%g\", x);\n");
+        sb.append("    return buf;\n");
+        sb.append("}\n\n");
+
+        sb.append("char* z_to_string_char(char x) {\n");
+        sb.append("    char* buf = (char*) malloc(4);\n");
+        sb.append("    sprintf(buf, \"%c\", x);\n");
+        sb.append("    return buf;\n");
+        sb.append("}\n\n");
+
+        sb.append("char* z_to_string_bool(int x) {\n");
+        sb.append("    return x ? (char*)\"true\" : (char*)\"false\";\n");
+        sb.append("}\n\n");
+
         sb.append("    char* r = malloc(strlen(a) + strlen(b) + 1);\n");
         sb.append("    strcpy(r, a);\n");
         sb.append("    strcat(r, b);\n");
         sb.append("    return r;\n");
+        sb.append("}\n\n");
+
+        // Helpers de conversión a string para concatenación.
+        sb.append("char* z_to_string_int(int x) {\n");
+        sb.append("    char* buf = (char*) malloc(32);\n");
+        sb.append("    sprintf(buf, \"%d\", x);\n");
+        sb.append("    return buf;\n");
+        sb.append("}\n\n");
+
+        sb.append("char* z_to_string_double(double x) {\n");
+        sb.append("    char* buf = (char*) malloc(32);\n");
+        sb.append("    sprintf(buf, \"%g\", x);\n");
+        sb.append("    return buf;\n");
+        sb.append("}\n\n");
+
+        sb.append("char* z_to_string_char(char x) {\n");
+        sb.append("    char* buf = (char*) malloc(4);\n");
+        sb.append("    sprintf(buf, \"%c\", x);\n");
+        sb.append("    return buf;\n");
+        sb.append("}\n\n");
+
+        sb.append("char* z_to_string_bool(int x) {\n");
+        sb.append("    return x ? (char*)\"true\" : (char*)\"false\";\n");
         sb.append("}\n\n");
     }
 

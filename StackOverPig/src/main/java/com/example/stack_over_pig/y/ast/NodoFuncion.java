@@ -104,10 +104,10 @@ public sealed interface NodoFuncion extends NodoAST permits NodoFuncion.Funcion 
                 if (p instanceof NodoParametro.Parametro par) {
                     if (par.esEstructura()) {
                         tabla.declararVariable(par.nombre(), par.tipoEstructura(),
-                                false, 0, true, par.tipoEstructura(), List.of());
+                                false, 0, true, par.tipoEstructura(), List.of(), true);
                     } else if (par.esArreglo()) {
                         tabla.declararVariable(par.nombre(), par.tipoPrimitivo(),
-                                true, 1, false, null, List.of());
+                                true, 1, false, null, List.of(), true);
                     } else {
                         tabla.declararVariable(par.nombre(), par.tipoPrimitivo());
                     }

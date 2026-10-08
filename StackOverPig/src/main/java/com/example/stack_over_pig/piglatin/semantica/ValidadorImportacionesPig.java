@@ -6,6 +6,7 @@ import com.example.stack_over_pig.y.errores.ResultadoCompilacionY;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 import com.example.stack_over_pig.y.service.ServicioCompilacionY;
 import com.example.stack_over_pig.zetariano.nodo.*;
+import com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ;
 import com.example.stack_over_pig.zetariano.service.ResultadoCompilacionZ;
 import com.example.stack_over_pig.zetariano.service.ServicioCompilacionZ;
 
@@ -55,24 +56,38 @@ public class ValidadorImportacionesPig {
 
     //Procesa todas las importaciones del programa. Devuelve true si todas se cargaron correctamente.
     public boolean procesarImportaciones(List<NodoImportacion> importaciones) {
-        boolean todasOk = true;
-
+        // PASADA 1: recolectar firmas de TODOS los .z importados.
+        // Esto permite resolver referencias cruzadas entre archivos .z
+        // (por ejemplo, ListaDoble.z usa la clase Nodo declarada en Nodo.z)
+        // antes de validar ninguno de ellos.
+        Map<String, TablaSimbolosZ.DefinicionClaseExterna> firmasZ = new LinkedHashMap<>();
         for (NodoImportacion imp : importaciones) {
-            boolean ok = procesarImportacion(imp);
+            if (!imp.ruta().endsWith(".z")) continue;
+            String contenido = leerContenidoDeImport(imp);
+            if (contenido == null) continue; // el error ya quedó registrado
+            ServicioCompilacionZ.recolectarFirmas(contenido)
+                    .ifPresent(def -> firmasZ.put(def.nombre(), def));
+        }
+
+        // PASADA 2: procesar cada importación con las firmas ya disponibles.
+        boolean todasOk = true;
+        for (NodoImportacion imp : importaciones) {
+            boolean ok = procesarImportacion(imp, firmasZ);
             if (!ok) todasOk = false;
         }
 
         return todasOk;
     }
 
-    private boolean procesarImportacion(NodoImportacion imp) {
+    private boolean procesarImportacion(NodoImportacion imp,
+                                        Map<String, TablaSimbolosZ.DefinicionClaseExterna> firmasZ) {
         String ruta = imp.ruta();
 
         // Determinar la extensión (.y o .z)
         if (ruta.endsWith(".y")) {
             return importarY(ruta, imp);
         } else if (ruta.endsWith(".z")) {
-            return importarZ(ruta, imp);
+            return importarZ(ruta, imp, firmasZ);
         } else {
             errores.add(new ErrorSemantico(imp.linea(), imp.columna(),
                     "Importación inválida",
@@ -180,7 +195,8 @@ public class ValidadorImportacionesPig {
 
 
     // IMPORTAR DE .z
-    private boolean importarZ(String ruta, NodoImportacion imp) {
+    private boolean importarZ(String ruta, NodoImportacion imp,
+                              Map<String, TablaSimbolosZ.DefinicionClaseExterna> firmasZ) {
         // Convertir 'carpeta.Archivo.z' a 'carpeta/Archivo.z'
         String rutaRelativa = convertirRuta(ruta);
 
@@ -205,7 +221,7 @@ public class ValidadorImportacionesPig {
 
         // Ejecutar el servicio de Z
         ServicioCompilacionZ servicioZ = new ServicioCompilacionZ();
-        ResultadoCompilacionZ resultado = servicioZ.analizar(contenido);
+        ResultadoCompilacionZ resultado = servicioZ.analizar(contenido, firmasZ);
 
         if (!resultado.isExitoso()) {
             errores.add(new ErrorSemantico(imp.linea(), imp.columna(),
@@ -315,5 +331,31 @@ public class ValidadorImportacionesPig {
             case "bool"     -> "bool";
             default         -> tipoY;
         };
+    }
+
+    /**
+     * Resuelve la ruta de un import (.y o .z), lee el archivo y devuelve su contenido.
+     * Si algo falla, registra el error correspondiente y devuelve null.
+     * Se usa en la pasada 1 de procesarImportaciones para recolectar firmas de .z.
+     */
+    private String leerContenidoDeImport(NodoImportacion imp) {
+        String rutaRelativa = convertirRuta(imp.ruta());
+        Path archivo = carpetaRaiz.resolve(rutaRelativa);
+
+        if (!Files.exists(archivo)) {
+            errores.add(new ErrorSemantico(imp.linea(), imp.columna(),
+                    "Archivo no encontrado",
+                    "No se encontró el archivo '" + imp.ruta() + "' en '" + archivo.toAbsolutePath() + "'"));
+            return null;
+        }
+
+        try {
+            return Files.readString(archivo);
+        } catch (IOException e) {
+            errores.add(new ErrorSemantico(imp.linea(), imp.columna(),
+                    "Error al leer archivo",
+                    "No se pudo leer '" + archivo.toAbsolutePath() + "': " + e.getMessage()));
+            return null;
+        }
     }
 }

@@ -22,9 +22,8 @@ public record NodoClase(
             if (TipoCZ.esPrimitivo(a.tipo())) {
                 tipoBaseC = TipoCZ.baseValorAC(a.tipo());
             } else {
-                tipoBaseC = "struct " + a.tipo();
+                tipoBaseC = "struct " + a.tipo() + "*";   // ← puntero para clases
             }
-            // Arreglo estilo Java: un '*' por cada dimensión.
             String tipoC = tipoBaseC + "*".repeat(a.dimensiones());
             campos.add(new ParametroC(tipoC, a.nombre()));
         }

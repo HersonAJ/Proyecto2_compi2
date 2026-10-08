@@ -40,9 +40,9 @@ public class OperacionBinaria extends Cuarteta {
             sb.append(")");
         } else if ("concat".equals(operador)) {
             sb.append("concat(");
-            izquierda.aCodigoC(sb);
+            emitirOperandoComoString(sb, izquierda);
             sb.append(", ");
-            derecha.aCodigoC(sb);
+            emitirOperandoComoString(sb, derecha);
             sb.append(")");
         } else {
             izquierda.aCodigoC(sb);
@@ -51,5 +51,23 @@ public class OperacionBinaria extends Cuarteta {
         }
 
         sb.append(";\n");
+    }
+
+    private void emitirOperandoComoString(StringBuilder sb, AccesoMemoria acc) {
+        String tipo = acc.getTipo();
+        if ("char*".equals(tipo) || "String".equals(tipo)) {
+            acc.aCodigoC(sb);
+            return;
+        }
+        String helper = switch (tipo) {
+            case "int"    -> "z_to_string_int";
+            case "double", "float" -> "z_to_string_double";
+            case "char"   -> "z_to_string_char";
+            case "boolean" -> "z_to_string_bool";
+            default       -> "z_to_string_int";
+        };
+        sb.append(helper).append('(');
+        acc.aCodigoC(sb);
+        sb.append(')');
     }
 }
