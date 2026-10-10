@@ -206,6 +206,13 @@ public sealed interface NodoExpr extends NodoAST permits
                 g.emitir(new OperacionBinaria(tRes, tCmp, operador, new Literal(0, "entero")));
                 return tRes;
             }
+            // 2b. Caso especial: '+' con cadena -> concatenación.
+            if ("+".equals(operador) && hayCadena) {
+                int idT = g.getContador().siguienteTemporal("cadena");
+                AccesoTemporal t = new AccesoTemporal(idT, "cadena");
+                g.emitir(new OperacionBinaria(t, izq, "concat", der));
+                return t;
+            }
 
             // 3. Promoción de tipos normal.
             PromocionTipos.Resultado prom = PromocionTipos.promover(izq.getTipo(), der.getTipo());

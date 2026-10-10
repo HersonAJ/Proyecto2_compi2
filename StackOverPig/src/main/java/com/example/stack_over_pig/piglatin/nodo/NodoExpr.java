@@ -318,6 +318,28 @@ public sealed interface NodoExpr extends NodoAST permits
             }
             var funcion = funOpt.get();
 
+            // 2b. Envolver con '&' los argumentos que sean struct por valor
+            //     y el parámetro correspondiente sea struct por referencia.
+            for (int i = 0; i < args.size() && i < funcion.parametros().size(); i++) {
+                TablaSimbolosPig.Parametro param = funcion.parametros().get(i);
+                NodoExpr argExpr = argumentos.get(i);
+
+                // El parámetro es struct por referencia si su tipo no es primitivo.
+                boolean paramEsStruct = !TipoPigC.esPrimitivo(param.tipo())
+                        && param.dimensiones() == 0;
+
+                if (paramEsStruct && argExpr instanceof Identificador id) {
+                    var simboloOpt = ctx.getTabla().buscarVariable(id.nombre());
+                    if (simboloOpt.isPresent()) {
+                        var simbolo = simboloOpt.get();
+                        // La variable es struct por valor -> hay que pasar &var.
+                        if (simbolo.esEstructura() && !simbolo.esObjeto()) {
+                            args.set(i, new AccesoDireccion(args.get(i)));
+                        }
+                    }
+                }
+            }
+
             // 3. Nombre C: igual al nombre .y
             String nombreC = nombre;
 

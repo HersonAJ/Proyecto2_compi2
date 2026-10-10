@@ -55,7 +55,7 @@ public class OperacionBinaria extends Cuarteta {
 
     private void emitirOperandoComoString(StringBuilder sb, AccesoMemoria acc) {
         String tipo = acc.getTipo();
-        if ("char*".equals(tipo) || "String".equals(tipo)) {
+        if ("char*".equals(tipo) || "String".equals(tipo) || "cadena".equals(tipo)) {
             acc.aCodigoC(sb);
             return;
         }

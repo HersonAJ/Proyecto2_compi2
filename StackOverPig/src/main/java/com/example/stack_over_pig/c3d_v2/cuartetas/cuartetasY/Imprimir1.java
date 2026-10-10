@@ -28,11 +28,11 @@ public class Imprimir1 extends Cuarteta {
 
     private String formato() {
         return switch (tipo) {
-            case "flotante" -> "%f\\n";
-            case "caracter" -> "%c\\n";
-            case "cadena"   -> "%s\\n";
-            case "bool"     -> "%d\\n";
-            default         -> "%d\\n";
+            case "flotante"                       -> "%f\\n";
+            case "caracter"                       -> "%c\\n";
+            case "cadena", "char*", "textum"      -> "%s\\n";
+            case "bool"                           -> "%d\\n";
+            default                               -> "%d\\n";
         };
     }
 
