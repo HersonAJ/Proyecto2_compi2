@@ -31,7 +31,6 @@ public sealed interface NodoSentencia extends NodoAST permits
         NodoSentencia.Continuar {
     TipoNodoSentencia tipoNodo();
 
-    void aCodigoIntermedio(ContextoTraduccion ctx);
 
     // DECLARACIONES
 
@@ -41,15 +40,6 @@ public sealed interface NodoSentencia extends NodoAST permits
         @Override
         public TipoNodoSentencia tipoNodo() {
             return TipoNodoSentencia.DECLARACION_VARIABLE;
-        }
-
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            if (inicializacion != null) {
-                AccesoMemoria valor = inicializacion.aCodigoIntermedio(ctx);
-                AccesoVariable destino = new AccesoVariable(nombre, tipo);
-                ctx.getGestor().emitir(new AsignacionVariable(destino, valor));
-            }
         }
     }
 
@@ -61,16 +51,6 @@ public sealed interface NodoSentencia extends NodoAST permits
             return TipoNodoSentencia.DECLARACION_ARREGLO;
         }
 
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            GestorCodigoIntermedio g = ctx.getGestor();
-            for (int i = 0; i < inicializacion.size(); i++) {
-                AccesoMemoria valor = inicializacion.get(i).aCodigoIntermedio(ctx);
-                AccesoVariable base = new AccesoVariable(nombre, tipo + "*");
-                Literal indice = new Literal(i, "entero");
-                g.emitir(new AsignacionArreglo(base, indice, valor));
-            }
-        }
     }
 
     // 'entero m[3][3]'  ->  sin cuarteta: la declaración la maneja el recogedor.
@@ -81,10 +61,6 @@ public sealed interface NodoSentencia extends NodoAST permits
         public TipoNodoSentencia tipoNodo() {
             return TipoNodoSentencia.DECLARACION_MATRIZ;
         }
-
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-        }
     }
 
     // 'Punto p = {10, 20}'  ->  asigna cada campo en orden posicional.
@@ -94,28 +70,6 @@ public sealed interface NodoSentencia extends NodoAST permits
         public TipoNodoSentencia tipoNodo() {
             return TipoNodoSentencia.DECLARACION_ESTRUCTURA;
         }
-
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            GestorCodigoIntermedio g = ctx.getGestor();
-            if (inicializacion.isEmpty()) return;
-
-            // La inicialización es posicional: se asignan los campos en el orden
-            // en que aparecen en la estructura.
-            var estOpt = ctx.getTabla().buscarEstructura(tipoEstructura);
-            if (estOpt.isEmpty()) {
-                throw new IllegalStateException(
-                        "Estructura no declarada: '" + tipoEstructura + "' (línea " + linea + ")");
-            }
-            var est = estOpt.get();
-            var nombresCampos = List.copyOf(est.atributos().keySet());
-
-            for (int i = 0; i < inicializacion.size() && i < nombresCampos.size(); i++) {
-                AccesoMemoria valor = inicializacion.get(i).aCodigoIntermedio(ctx);
-                AccesoVariable base = new AccesoVariable(nombre, tipoEstructura);
-                g.emitir(new AsignacionAtributo(base, nombresCampos.get(i), false, valor));
-            }
-        }
     }
 
     // Estructura declarada dentro de una función. No emite cuarteta
@@ -124,11 +78,6 @@ public sealed interface NodoSentencia extends NodoAST permits
         @Override
         public TipoNodoSentencia tipoNodo() {
             return TipoNodoSentencia.DECLARACION_ESTRUCTURA_LOCAL;
-        }
-
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            // No es una instrucción ejecutable; solo info de tipos.
         }
     }
 
@@ -140,15 +89,6 @@ public sealed interface NodoSentencia extends NodoAST permits
             return TipoNodoSentencia.ASIGNACION;
         }
 
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            GestorCodigoIntermedio g = ctx.getGestor();
-
-            AccesoMemoria destinoAcc = destino.aCodigoIntermedio(ctx);
-            AccesoMemoria valorAcc = valor.aCodigoIntermedio(ctx);
-
-            g.emitir(new AsignacionVariable(destinoAcc, valorAcc));
-        }
     }
 
     // 'destino++' / 'destino--'  ->  se traduce como 'destino = destino + 1'
@@ -159,13 +99,6 @@ public sealed interface NodoSentencia extends NodoAST permits
             return TipoNodoSentencia.INCREMENTO_DECREMENTO;
         }
 
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            String opBinario = "++".equals(operador) ? "+" : "-";
-            NodoExpr uno = new NodoExpr.LiteralEntero(linea, columna, 1);
-            NodoExpr nuevoValor = new NodoExpr.Binaria(linea, columna, opBinario, destino, uno);
-            new Asignacion(linea, columna, destino, nuevoValor).aCodigoIntermedio(ctx);
-        }
     }
 
     // CONDICIONAL
@@ -183,41 +116,6 @@ public sealed interface NodoSentencia extends NodoAST permits
             return TipoNodoSentencia.CONDICIONAL;
         }
 
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            GestorCodigoIntermedio g = ctx.getGestor();
-            var c = g.getContador();
-            int lFin = c.siguienteEtiqueta();
-
-            // Todas las ramas en orden: primero el 'si', luego cada 'sino'.
-            List<NodoExpr> condiciones = new ArrayList<>();
-            List<List<NodoSentencia>> cuerpos = new ArrayList<>();
-            condiciones.add(condicion);
-            cuerpos.add(cuerpoSi);
-            for (RamaSino r : ramasSino) {
-                condiciones.add(r.condicion());
-                cuerpos.add(r.cuerpo());
-            }
-
-            for (int i = 0; i < condiciones.size(); i++) {
-                int lCuerpo = c.siguienteEtiqueta();
-                int lSiguiente = c.siguienteEtiqueta();
-
-                AccesoMemoria cond = condiciones.get(i).aCodigoIntermedio(ctx);
-                g.emitir(new Condicional1(cond, "!=", new Literal(0, "entero"), lCuerpo));
-                g.emitir(new Salto(lSiguiente));
-
-                g.emitir(new DefinicionEtiqueta(lCuerpo));
-                for (NodoSentencia s : cuerpos.get(i)) s.aCodigoIntermedio(ctx);
-                g.emitir(new Salto(lFin));
-
-                g.emitir(new DefinicionEtiqueta(lSiguiente));
-            }
-            if (cuerpoContrario != null) {
-                for (NodoSentencia s : cuerpoContrario) s.aCodigoIntermedio(ctx);
-            }
-            g.emitir(new DefinicionEtiqueta(lFin));
-        }
     }
 
     // ELEGIR
@@ -229,52 +127,6 @@ public sealed interface NodoSentencia extends NodoAST permits
             return TipoNodoSentencia.ELEGIR;
         }
 
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            GestorCodigoIntermedio g = ctx.getGestor();
-            var c = g.getContador();
-
-            AccesoMemoria exprAcc = expresion.aCodigoIntermedio(ctx);
-            int lFin = c.siguienteEtiqueta();
-
-            // Cada caso: etiqueta propia + comparación
-            int[] etiquetasCasos = new int[casos.size()];
-            for (int i = 0; i < casos.size(); i++) {
-                etiquetasCasos[i] = c.siguienteEtiqueta();
-            }
-            int lSiempre = (siempre != null) ? c.siguienteEtiqueta() : lFin;
-
-            // Evaluar cada caso y saltar a su etiqueta si coincide
-            for (int i = 0; i < casos.size(); i++) {
-                CasoElegir caso = casos.get(i);
-                AccesoMemoria valorCaso = caso.valor().aCodigoIntermedio(ctx);
-                g.emitir(new Condicional1(exprAcc, "==", valorCaso, etiquetasCasos[i]));
-            }
-            // Si ningún caso coincide: al 'siempre' o al fin
-            g.emitir(new Salto(lSiempre));
-
-// 'romper' dentro del elegir salta a lFin; 'continuar' sigue siendo el del ciclo exterior.
-            ContextoCiclo cicloExterno = g.cicloActual();
-            int lContinuarExterno = (cicloExterno != null) ? cicloExterno.getEtiquetaContinuar() : -1;
-            g.entrarCiclo(new ContextoCiclo(lContinuarExterno, lFin));
-
-// Cuerpos de los casos
-            for (int i = 0; i < casos.size(); i++) {
-                g.emitir(new DefinicionEtiqueta(etiquetasCasos[i]));
-                for (NodoSentencia s : casos.get(i).cuerpo()) s.aCodigoIntermedio(ctx);
-                g.emitir(new Salto(lFin));
-            }
-
-// Cuerpo 'siempre'
-            if (siempre != null) {
-                g.emitir(new DefinicionEtiqueta(lSiempre));
-                for (NodoSentencia s : siempre.cuerpo()) s.aCodigoIntermedio(ctx);
-                g.emitir(new Salto(lFin));
-            }
-
-            g.salirCiclo();
-            g.emitir(new DefinicionEtiqueta(lFin));
-        }
     }
 
     // Caso individual dentro de 'elegir'. Lo gestiona Elegir.
@@ -283,11 +135,6 @@ public sealed interface NodoSentencia extends NodoAST permits
         @Override
         public TipoNodoSentencia tipoNodo() {
             return TipoNodoSentencia.ELEGIR;
-        }
-
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            // Gestionado por Elegir.aCodigoIntermedio.
         }
     }
 
@@ -299,9 +146,6 @@ public sealed interface NodoSentencia extends NodoAST permits
             return TipoNodoSentencia.ELEGIR;
         }
 
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-        }
     }
 
     // CICLOS
@@ -315,43 +159,6 @@ public sealed interface NodoSentencia extends NodoAST permits
         public TipoNodoSentencia tipoNodo() {
             return TipoNodoSentencia.CICLO_PARA;
         }
-
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            GestorCodigoIntermedio g = ctx.getGestor();
-            var c = g.getContador();
-
-            // Inicialización: tipo nombre = valorInicial
-            AccesoMemoria valorInit = valorInicial.aCodigoIntermedio(ctx);
-            AccesoVariable var = new AccesoVariable(nombreVariable, tipoInicializacion);
-            g.emitir(new AsignacionVariable(var, valorInit));
-
-            int lInicio = c.siguienteEtiqueta();
-            int lContinuar = c.siguienteEtiqueta();
-            int lRomper = c.siguienteEtiqueta();
-
-            g.emitir(new DefinicionEtiqueta(lInicio));
-
-            // Condición: si NO se cumple, salta al fin
-            AccesoMemoria condAcc = condicion.aCodigoIntermedio(ctx);
-            g.emitir(new Condicional1(condAcc, "==", new Literal(0, "entero"), lRomper));
-
-            // Entrar al ciclo (para romper/continuar)
-            g.entrarCiclo(new ContextoCiclo(lContinuar, lRomper));
-
-            for (NodoSentencia s : cuerpo) s.aCodigoIntermedio(ctx);
-
-            g.salirCiclo();
-
-            // Actualización
-            g.emitir(new DefinicionEtiqueta(lContinuar));
-            AccesoVariable varAct = new AccesoVariable(nombreVariable, tipoInicializacion);
-            String opBin = "++".equals(operadorActualizacion) ? "+" : "-";
-            g.emitir(new OperacionBinaria(varAct, varAct, opBin, new Literal(1, "entero")));
-
-            g.emitir(new Salto(lInicio));
-            g.emitir(new DefinicionEtiqueta(lRomper));
-        }
     }
 
     // 'mientras(cond) hacer ...'  ->  etiqueta inicio + cond + cuerpo + salto atrás.
@@ -363,28 +170,6 @@ public sealed interface NodoSentencia extends NodoAST permits
             return TipoNodoSentencia.CICLO_MIENTRAS;
         }
 
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            GestorCodigoIntermedio g = ctx.getGestor();
-            var c = g.getContador();
-
-            int lInicio = c.siguienteEtiqueta();
-            int lRomper = c.siguienteEtiqueta();
-
-            g.emitir(new DefinicionEtiqueta(lInicio));
-
-            AccesoMemoria condAcc = condicion.aCodigoIntermedio(ctx);
-            g.emitir(new Condicional1(condAcc, "==", new Literal(0, "entero"), lRomper));
-
-            g.entrarCiclo(new ContextoCiclo(lInicio, lRomper));
-
-            for (NodoSentencia s : cuerpo) s.aCodigoIntermedio(ctx);
-
-            g.salirCiclo();
-
-            g.emitir(new Salto(lInicio));
-            g.emitir(new DefinicionEtiqueta(lRomper));
-        }
     }
 
     // 'hacer: ... mientras(cond)'  ->  cuerpo + etiqueta cond + salto si verdad.
@@ -395,30 +180,6 @@ public sealed interface NodoSentencia extends NodoAST permits
         public TipoNodoSentencia tipoNodo() {
             return TipoNodoSentencia.CICLO_HACER_MIENTRAS;
         }
-
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            GestorCodigoIntermedio g = ctx.getGestor();
-            var c = g.getContador();
-
-            int lInicio = c.siguienteEtiqueta();
-            int lCondicion = c.siguienteEtiqueta();
-            int lRomper = c.siguienteEtiqueta();
-
-            g.emitir(new DefinicionEtiqueta(lInicio));
-
-            g.entrarCiclo(new ContextoCiclo(lCondicion, lRomper));
-
-            for (NodoSentencia s : cuerpo) s.aCodigoIntermedio(ctx);
-
-            g.salirCiclo();
-
-            g.emitir(new DefinicionEtiqueta(lCondicion));
-            AccesoMemoria condAcc = condicion.aCodigoIntermedio(ctx);
-            g.emitir(new Condicional1(condAcc, "!=", new Literal(0, "entero"), lInicio));
-
-            g.emitir(new DefinicionEtiqueta(lRomper));
-        }
     }
 
     // RETORNO
@@ -427,12 +188,6 @@ public sealed interface NodoSentencia extends NodoAST permits
         @Override
         public TipoNodoSentencia tipoNodo() {
             return TipoNodoSentencia.RETORNO;
-        }
-
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            AccesoMemoria valorAcc = (valor != null) ? valor.aCodigoIntermedio(ctx) : null;
-            ctx.getGestor().emitir(new Retorno1(valorAcc));
         }
     }
 
@@ -444,11 +199,6 @@ public sealed interface NodoSentencia extends NodoAST permits
             return TipoNodoSentencia.IMPRIMIR;
         }
 
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            AccesoMemoria valorAcc = expresion.aCodigoIntermedio(ctx);
-            ctx.getGestor().emitir(new Imprimir1(valorAcc, valorAcc.getTipo()));
-        }
     }
 
     // 'leer()'  ->  sin destino no emite nada
@@ -456,11 +206,6 @@ public sealed interface NodoSentencia extends NodoAST permits
         @Override
         public TipoNodoSentencia tipoNodo() {
             return TipoNodoSentencia.LEER;
-        }
-
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            // 'leer()' sin destino no hace nada útil.
         }
     }
 
@@ -471,16 +216,6 @@ public sealed interface NodoSentencia extends NodoAST permits
         public TipoNodoSentencia tipoNodo() {
             return TipoNodoSentencia.ROMPER;
         }
-
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            ContextoCiclo cc = ctx.getGestor().cicloActual();
-            if (cc == null) {
-                throw new IllegalStateException(
-                        "'romper' fuera de un ciclo (línea " + linea + ")");
-            }
-            ctx.getGestor().emitir(new Romper1(cc.getEtiquetaRomper()));
-        }
     }
 
     // 'continuar'  ->  goto a la etiqueta de continuación del ciclo activo.
@@ -490,14 +225,5 @@ public sealed interface NodoSentencia extends NodoAST permits
             return TipoNodoSentencia.CONTINUAR;
         }
 
-        @Override
-        public void aCodigoIntermedio(ContextoTraduccion ctx) {
-            ContextoCiclo cc = ctx.getGestor().cicloActual();
-            if (cc == null) {
-                throw new IllegalStateException(
-                        "'continuar' fuera de un ciclo (línea " + linea + ")");
-            }
-            ctx.getGestor().emitir(new Continuar1(cc.getEtiquetaContinuar()));
-        }
     }
 }

@@ -284,11 +284,11 @@ public class ValidadorImportacionesPig {
             TablaSimbolosPig.DefinicionClase def = new TablaSimbolosPig.DefinicionClase(
                     clase.nombre(), atributos, constructores, metodos);
             tabla.declararClase(def);
-            estructurasImportadas.add(clase.aEstructuraC());
+            //estructurasImportadas.add(clase.aEstructuraC());
 
             var tablaZ = resultado.getTablaSimbolos();
             if (tablaZ != null) {
-                funcionesImportadas.addAll(clase.aFuncionesC(tablaZ));
+                //funcionesImportadas.addAll(clase.aFuncionesC(tablaZ));
             }
         }
 

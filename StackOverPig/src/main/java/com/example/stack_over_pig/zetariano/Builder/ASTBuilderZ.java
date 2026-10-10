@@ -18,10 +18,14 @@ public class ASTBuilderZ extends ZParserBaseVisitor<NodoAST> {
         return new NodoPrograma(linea(ctx), columna(ctx), clase);
     }
 
-    /** 'public class X { ... }'  .>  NodoClase con atributos, constructores y métodos. */
+    /** '[public] class X [extends Y] { ... }'  ->  NodoClase con atributos, constructores y métodos. */
     @Override
     public NodoAST visitClaseDefinicion(ZParser.ClaseDefinicionContext ctx) {
         String nombre = ctx.ID().getText();
+        // sin 'extends' la superclase es null
+        String superclase = ctx.herencia() != null ? ctx.herencia().ID().getText() : null;
+        // una clase solo puede ser public o de paquete (sin modificador)
+        Visibilidad visibilidad = ctx.PUBLIC() != null ? Visibilidad.PUBLICO : Visibilidad.PAQUETE;
 
         List<NodoAtributoZ> atributos = new ArrayList<>();
         List<NodoConstructor> constructores = new ArrayList<>();
@@ -34,7 +38,8 @@ public class ASTBuilderZ extends ZParserBaseVisitor<NodoAST> {
             else if (nodo instanceof NodoMetodo me) metodos.add(me);
         }
 
-        return new NodoClase(linea(ctx), columna(ctx), nombre, atributos, constructores, metodos);
+        return new NodoClase(linea(ctx), columna(ctx), visibilidad, nombre, superclase,
+                atributos, constructores, metodos);
     }
 
     @Override
@@ -42,32 +47,45 @@ public class ASTBuilderZ extends ZParserBaseVisitor<NodoAST> {
         return visit(ctx.getChild(0));
     }
 
-    /** 'tipo ID;'  ->  NodoAtributoZ con tipo y dimensiones. */
+    /** '[modificador] tipo ID;'  ->  NodoAtributoZ con visibilidad, tipo y dimensiones. */
     @Override
     public NodoAST visitAtributo(ZParser.AtributoContext ctx) {
+        Visibilidad visibilidad = visibilidadDe(ctx.modificador());
         String tipo = ctx.tipo().getText();
         String nombre = ctx.ID().getText();
         int dimensiones = ctx.COR_IZQ().size();
-        return new NodoAtributoZ(linea(ctx), columna(ctx), tipo, nombre, dimensiones);
+        return new NodoAtributoZ(linea(ctx), columna(ctx), visibilidad, tipo, nombre, dimensiones);
     }
 
-    /** 'public Nombre(params) { ... }'  ->  NodoConstructor. */
+    /** '[modificador] Nombre(params) { ... }'  ->  NodoConstructor. */
     @Override
     public NodoAST visitConstructor(ZParser.ConstructorContext ctx) {
+        Visibilidad visibilidad = visibilidadDe(ctx.modificador());
         String nombre = ctx.ID().getText();
         List<NodoParametroZ> parametros = construirParametros(ctx.parametros());
         List<NodoSentencia> cuerpo = construirBloque(ctx.bloque());
-        return new NodoConstructor(linea(ctx), columna(ctx), nombre, parametros, cuerpo);
+        return new NodoConstructor(linea(ctx), columna(ctx), visibilidad, nombre, parametros, cuerpo);
     }
 
-    /** 'public tipo nombre(params) { ... }'  ->  NodoMetodo. */
+    /** '[@Override] [modificador] tipo nombre(params) { ... }'  ->  NodoMetodo. */
     @Override
     public NodoAST visitMetodo(ZParser.MetodoContext ctx) {
+        boolean esOverride = ctx.OVERRIDE() != null;
+        Visibilidad visibilidad = visibilidadDe(ctx.modificador());
         String nombre = ctx.ID().getText();
         String tipoRetorno = ctx.VOID() != null ? null : ctx.tipo().getText();
         List<NodoParametroZ> parametros = construirParametros(ctx.parametros());
         List<NodoSentencia> cuerpo = construirBloque(ctx.bloque());
-        return new NodoMetodo(linea(ctx), columna(ctx), nombre, parametros, tipoRetorno, cuerpo);
+        return new NodoMetodo(linea(ctx), columna(ctx), esOverride, visibilidad, nombre,
+                parametros, tipoRetorno, cuerpo);
+    }
+
+    /** Sin modificador el miembro es de paquete ('default'); si viene, public/private/protected. */
+    private Visibilidad visibilidadDe(ZParser.ModificadorContext ctx) {
+        if (ctx == null) return Visibilidad.PAQUETE;
+        if (ctx.PUBLIC() != null) return Visibilidad.PUBLICO;
+        if (ctx.PRIVATE() != null) return Visibilidad.PRIVADO;
+        return Visibilidad.PROTEGIDO;
     }
 
     /** 'tipo ID'  ->  NodoParametroZ. */
@@ -325,6 +343,12 @@ public class ASTBuilderZ extends ZParserBaseVisitor<NodoAST> {
     /** Literal como expresión. */
     @Override
     public NodoAST visitExprLiteral(ZParser.ExprLiteralContext ctx) { return visit(ctx.literal()); }
+
+    /** 'this'  ->  NodoExpr.ObjetoActual. */
+    @Override
+    public NodoAST visitExprThis(ZParser.ExprThisContext ctx) {
+        return new NodoExpr.ObjetoActual(linea(ctx), columna(ctx));
+    }
 
     /** Identificador como expresión  ->  NodoExpr.Identificador. */
     @Override

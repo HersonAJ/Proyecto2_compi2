@@ -2,10 +2,17 @@ lexer grammar ZLexer;
 
 //palabras reservadas de estructura
 PUBLIC      : 'public';
+PRIVATE     : 'private';
+PROTECTED   : 'protected';
 CLASS       : 'class';
+EXTENDS     : 'extends';
+THIS        : 'this';
 VOID        : 'void';
 NEW         : 'new';
 RETURN      : 'return';
+
+//anotaciones (la unica soportada es @Override)
+OVERRIDE    : '@Override';
 
 //tipos primitivos
 INT         : 'int';

@@ -2,27 +2,39 @@ parser grammar ZParser;
 
 options { tokenVocab = ZLexer; }
 
-//un archivo .z contiene una unica clase publica (debe llamarse igual que el archivo)
+//un archivo .z contiene una unica clase (debe llamarse igual que el archivo)
 programa : claseDefinicion EOF
          ;
 
-claseDefinicion : PUBLIC CLASS ID LLAVE_IZQ miembroClase* LLAVE_DER
+//'public' es opcional en la clase: el enunciado del proyecto 2 muestra 'class Impresora' sin el
+//la herencia va en su propia regla para que ID() siga siendo un unico nodo en ClaseDefinicionContext
+claseDefinicion : PUBLIC? CLASS ID herencia? LLAVE_IZQ miembroClase* LLAVE_DER
                 ;
+
+herencia : EXTENDS ID
+         ;
 
 miembroClase : atributo
              | constructor
              | metodo
              ;
 
-//atributos publicos, sin valor por defecto
-atributo : tipo (COR_IZQ COR_DER)* ID PUNTO_COMA
+//sin modificador = 'default' (accesible solo dentro del mismo paquete)
+modificador : PUBLIC
+            | PRIVATE
+            | PROTECTED
+            ;
+
+//atributos sin valor por defecto
+atributo : modificador? tipo (COR_IZQ COR_DER)* ID PUNTO_COMA
          ;
 
 //el constructor no lleva tipo de retorno
-constructor : PUBLIC ID PAR_IZQ parametros? PAR_DER bloque
+constructor : modificador? ID PAR_IZQ parametros? PAR_DER bloque
             ;
 
-metodo : PUBLIC (VOID | tipo) ID PAR_IZQ parametros? PAR_DER bloque
+//@Override va antes del metodo; si es valido o no (si realmente sobrescribe) se revisa en la semantica
+metodo : OVERRIDE? modificador? (VOID | tipo) ID PAR_IZQ parametros? PAR_DER bloque
        ;
 
 parametros : parametro (COMA parametro)*
@@ -131,6 +143,7 @@ expresion  : PAR_IZQ expresion PAR_DER                                          
            | NEW ID PAR_IZQ argumentos? PAR_DER                                 # ExprInstanciacionObjeto
            | NEW tipo (COR_IZQ expresion? COR_DER)+                             # ExprArregloNuevo
            | literal                                                            # ExprLiteral
+           | THIS                                                               # ExprThis
            | ID                                                                 # ExprIdentificador
            | expresion PUNTO ID PAR_IZQ argumentos? PAR_DER                     # ExprLlamadaMetodo
            | expresion PUNTO ID                                                 # ExprAccesoAtributo

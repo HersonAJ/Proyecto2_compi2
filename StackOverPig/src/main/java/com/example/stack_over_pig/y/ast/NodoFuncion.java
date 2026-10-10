@@ -39,7 +39,7 @@ public sealed interface NodoFuncion extends NodoAST permits NodoFuncion.Funcion 
                 recogerYDeclararVariablesLocales(ctx, tabla, cuerpo, variablesLocales);
 
                 for (NodoSentencia s : cuerpo) {
-                    s.aCodigoIntermedio(ctx);
+                    //s.aCodigoIntermedio(ctx);
                 }
             } finally {
                 tabla.salirScope();

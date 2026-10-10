@@ -92,7 +92,7 @@ public class ValidadorAlcanceZ {
                 for (NodoExpr elem : ((NodoExpr.ListaLiteral) expr).elementos()) resolverExpresion(elem);
             }
 
-            case LITERAL_ENTERO, LITERAL_DECIMAL, LITERAL_CADENA, LITERAL_CARACTER, LITERAL_BOOL, LITERAL_NULO -> {}
+            case LITERAL_ENTERO, LITERAL_DECIMAL, LITERAL_CADENA, LITERAL_CARACTER, LITERAL_BOOL, LITERAL_NULO, OBJETO_ACTUAL -> {}
         }
     }
 

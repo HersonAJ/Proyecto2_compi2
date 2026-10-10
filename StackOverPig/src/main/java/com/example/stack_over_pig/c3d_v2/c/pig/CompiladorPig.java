@@ -51,20 +51,20 @@ public class CompiladorPig {
         List<EstructuraC> estructurasImportadas = importaciones.getEstructurasImportadas();
 
         // 4. Variables globales y main del .pig
-        List<ParametroC> variablesGlobales = programa.aVariablesGlobalesC(tabla);
-        FuncionC mainC = programa.aMainC(tabla);
+       // List<ParametroC> variablesGlobales = programa.aVariablesGlobalesC(tabla);
+       // FuncionC mainC = programa.aMainC(tabla);
 
         // 5. Combinar
         List<FuncionC> funciones = new ArrayList<>(funcionesImportadas);
-        funciones.add(mainC);
+        //funciones.add(mainC);
         List<EstructuraC> estructuras = new ArrayList<>(estructurasImportadas);
 
         // 6. Generar C
-        String codigoC = new GeneradorC().generar(
-                funciones, estructuras, variablesGlobales, false);
+        //String codigoC = new GeneradorC().generar(
+          //      funciones, estructuras, variablesGlobales, false);
 
         // 7. Escribir y compilar
-        new GeneradorArchivoC().generarYCompilar(codigoC);
+        //new GeneradorArchivoC().generarYCompilar(codigoC);
     }
 
     private NodoPrograma parsearPig(Path ruta) throws IOException {

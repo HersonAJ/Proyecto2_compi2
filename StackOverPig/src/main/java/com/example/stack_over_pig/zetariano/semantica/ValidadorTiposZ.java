@@ -73,6 +73,7 @@ public class ValidadorTiposZ {
             case LITERAL_BOOL -> new TipoResuelto(BOOLEAN, 0);
             case LITERAL_NULO -> new TipoResuelto(NULO, 0);
             case LISTA_LITERAL -> null;
+            case OBJETO_ACTUAL -> new TipoResuelto(tabla.getNombreClase(), 0);
             case IDENTIFICADOR -> {
                 NodoExpr.Identificador id = (NodoExpr.Identificador) expr;
                 Optional<TablaSimbolosZ.SimboloVariable> simbolo = tabla.buscarVariable(id.nombre());

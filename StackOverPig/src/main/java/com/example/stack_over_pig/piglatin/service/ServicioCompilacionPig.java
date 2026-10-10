@@ -241,11 +241,11 @@ public class ServicioCompilacionPig {
 
         var tabla = validador.getTabla();
 
-        var variablesGlobales = programa.aVariablesGlobalesC(tabla);
-        var mainC = programa.aMainC(tabla);
+        //var variablesGlobales = programa.aVariablesGlobalesC(tabla);
+        //var mainC = programa.aMainC(tabla);
 
         var funciones = new ArrayList<>(funcionesImportadas);
-        funciones.add(mainC);
+        //funciones.add(mainC);
 
         var estructuras = new ArrayList<EstructuraC>();
         var nombresVistos = new java.util.HashSet<String>();
@@ -254,7 +254,6 @@ public class ServicioCompilacionPig {
                 estructuras.add(e);
             }
         }
-
-        return new GeneradorC().generar(funciones, estructuras, variablesGlobales, false);
+        return new GeneradorC().generar(funciones, estructuras, null, false);
     }
 }
