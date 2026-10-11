@@ -5,6 +5,7 @@ import com.example.stack_over_pig.zetariano.nodo.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Orquesta todas las validaciones semánticas del lenguaje .z.
@@ -29,12 +30,18 @@ public class ValidadorSemanticoZ {
 
 
     public List<ErrorSemantico> analizar(NodoPrograma programa) {
-        return analizar(programa, java.util.Map.of());
+        return analizar(programa, Map.of());
     }
 
-    public List<ErrorSemantico> analizar(NodoPrograma programa,
-                                         java.util.Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas) {
-        // Registrar clases externas ANTES que todo
+    public List<ErrorSemantico> analizar(NodoPrograma programa, Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas) {
+        return analizar(programa, externas, "");
+    }
+
+    public List<ErrorSemantico> analizar(NodoPrograma programa, Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas,
+                                         String paquete) {
+        tabla.setPaqueteActual(paquete);
+
+        // Registrar clases externas ANTES que todoo
         if (externas != null) {
             externas.values().forEach(tabla::registrarClaseExterna);
         }

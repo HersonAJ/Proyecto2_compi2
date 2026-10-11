@@ -18,11 +18,13 @@ public class ValidadorAlcanceZ {
 
     private final TablaSimbolosZ tabla;
     private final List<ErrorSemantico> errores;
+    private final ControlAccesoZ control;
     private static final java.util.Set<String> PRIMITIVOS = java.util.Set.of("int", "double", "char", "boolean", "String");
 
     public ValidadorAlcanceZ(TablaSimbolosZ tabla, List<ErrorSemantico> errores) {
         this.tabla = tabla;
         this.errores = errores;
+        this.control = new ControlAccesoZ(tabla, errores);
     }
 
     /** Recorre una expresión resolviendo identificadores y tipos. */
@@ -101,12 +103,17 @@ public class ValidadorAlcanceZ {
         resolverNombre(id.nombre(), id.linea(), id.columna());
     }
 
-    /** Reporta error si el nombre no es variable ni atributo de la clase. */
+    /** Reporta error si el nombre no existe, o si es un atributo al que no se puede acceder. */
     public void resolverNombre(String nombre, int linea, int columna) {
         if (tabla.buscarVariable(nombre).isEmpty()) {
             errores.add(new ErrorSemantico(linea, columna, "Identificador no declarado",
                     "'" + nombre + "' no existe en el ambito actual ni es un atributo de la clase"));
+            return;
         }
+        // una variable local siempre es accesible; un atributo (propio o heredado) puede no serlo
+        if (tabla.existeVariableLocal(nombre)) return;
+        tabla.buscarAtributoEn(tabla.getNombreClase(), nombre).ifPresent(a ->
+                control.verificar(a.visibilidad(), a.claseDeclarante(), nombre, "El atributo", linea, columna));
     }
 
     /** Valida que un tipo sea primitivo o la clase conocida. */

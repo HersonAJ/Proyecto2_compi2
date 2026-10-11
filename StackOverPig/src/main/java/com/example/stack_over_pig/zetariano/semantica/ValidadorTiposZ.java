@@ -46,10 +46,12 @@ public class ValidadorTiposZ {
 
     private final TablaSimbolosZ tabla;
     private final List<ErrorSemantico> errores;
+    private final ControlAccesoZ control;
 
     public ValidadorTiposZ(TablaSimbolosZ tabla, List<ErrorSemantico> errores) {
         this.tabla = tabla;
         this.errores = errores;
+        this.control = new ControlAccesoZ(tabla, errores);
     }
 
     private boolean esPrimitivo(String tipo) { //True si el tipo es un primitivo (sin contar String)
@@ -118,7 +120,7 @@ public class ValidadorTiposZ {
                 TipoResuelto tipoObjeto = tipoDeExpresion(acceso.objeto());
                 if (tipoObjeto == null) yield null;
 
-                if (!tabla.esClaseConocida(tipoObjeto.base())) {   // ← era .equals(tabla.getNombreClase())
+                if (!tabla.esClaseConocida(tipoObjeto.base())) {
                     errores.add(new ErrorSemantico(acceso.linea(), acceso.columna(),
                             "Acceso invalido",
                             "No se puede acceder a '" + acceso.atributo() + "' porque '"
@@ -127,13 +129,16 @@ public class ValidadorTiposZ {
                 }
 
                 Optional<TablaSimbolosZ.SimboloAtributo> atributo =
-                        tabla.buscarAtributoEn(tipoObjeto.base(), acceso.atributo());   // ← antes buscarAtributo
+                        tabla.buscarAtributoEn(tipoObjeto.base(), acceso.atributo());
                 if (atributo.isEmpty()) {
                     errores.add(new ErrorSemantico(acceso.linea(), acceso.columna(),
                             "Atributo no declarado",
                             "'" + acceso.atributo() + "' no existe en la clase '" + tipoObjeto.base() + "'"));
                     yield null;
                 }
+                // NUEVO: si existe pero no es accesible, se reporta (y se sigue devolviendo el tipo)
+                control.verificar(atributo.get().visibilidad(), atributo.get().claseDeclarante(),
+                        acceso.atributo(), "El atributo", acceso.linea(), acceso.columna());
                 yield new TipoResuelto(atributo.get().tipo(), atributo.get().dimensiones());
             }
 
@@ -210,6 +215,11 @@ public class ValidadorTiposZ {
                 List<TipoResuelto> tiposArgs = llamada.argumentos().stream().map(this::tipoDeExpresion).toList();
                 TablaSimbolosZ.Firma firma = resolverSobrecarga(tabla.getMetodosDe(tabla.getNombreClase(), llamada.nombre()), tiposArgs,
                         llamada.linea(), llamada.columna(), llamada.nombre(), "Metodo");
+                // NUEVO
+                if (firma != null) {
+                    control.verificar(firma.visibilidad(), firma.claseDeclarante(),
+                            llamada.nombre(), "El método", llamada.linea(), llamada.columna());
+                }
                 yield firma == null || firma.tipoRetorno() == null ? null : new TipoResuelto(firma.tipoRetorno(), 0);
             }
 
@@ -219,7 +229,7 @@ public class ValidadorTiposZ {
                 List<TipoResuelto> tiposArgs = llamada.argumentos().stream().map(this::tipoDeExpresion).toList();
                 if (tipoObjeto == null) yield null;
 
-                if (!tabla.esClaseConocida(tipoObjeto.base())) {   // ← era .equals(tabla.getNombreClase())
+                if (!tabla.esClaseConocida(tipoObjeto.base())) {
                     errores.add(new ErrorSemantico(llamada.linea(), llamada.columna(),
                             "Acceso invalido",
                             "No se puede llamar a '" + llamada.nombre() + "' porque '"
@@ -228,8 +238,13 @@ public class ValidadorTiposZ {
                 }
 
                 TablaSimbolosZ.Firma firma = resolverSobrecarga(
-                        tabla.getMetodosDe(tipoObjeto.base(), llamada.nombre()),   // ← antes getMetodos
+                        tabla.getMetodosDe(tipoObjeto.base(), llamada.nombre()),
                         tiposArgs, llamada.linea(), llamada.columna(), llamada.nombre(), "Metodo");
+                // NUEVO
+                if (firma != null) {
+                    control.verificar(firma.visibilidad(), firma.claseDeclarante(),
+                            llamada.nombre(), "El método", llamada.linea(), llamada.columna());
+                }
                 yield firma == null || firma.tipoRetorno() == null
                         ? null
                         : new TipoResuelto(firma.tipoRetorno(), 0);
@@ -237,13 +252,19 @@ public class ValidadorTiposZ {
 
             case INSTANCIA_OBJETO -> {
                 NodoExpr.InstanciaObjeto instancia = (NodoExpr.InstanciaObjeto) expr;
-                if (!tabla.esClaseConocida(instancia.tipoClase())) yield null;   // ← era .equals(tabla.getNombreClase())
+                if (!tabla.esClaseConocida(instancia.tipoClase())) yield null;
 
                 List<TipoResuelto> tiposArgs = instancia.argumentos().stream().map(this::tipoDeExpresion).toList();
-                resolverSobrecarga(
-                        tabla.getConstructoresDe(instancia.tipoClase()),   // ← antes getConstructores
+                // antes el resultado de resolverSobrecarga se ignoraba; ahora se guarda
+                TablaSimbolosZ.Firma constructor = resolverSobrecarga(
+                        tabla.getConstructoresDe(instancia.tipoClase()),
                         tiposArgs, instancia.linea(), instancia.columna(),
                         instancia.tipoClase(), "Constructor");
+                // NUEVO
+                if (constructor != null) {
+                    control.verificar(constructor.visibilidad(), constructor.claseDeclarante(),
+                            instancia.tipoClase(), "El constructor", instancia.linea(), instancia.columna());
+                }
                 yield new TipoResuelto(instancia.tipoClase(), 0);
             }
 

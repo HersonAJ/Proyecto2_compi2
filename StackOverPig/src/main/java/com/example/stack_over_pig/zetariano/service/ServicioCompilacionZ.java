@@ -18,11 +18,16 @@ import java.util.Optional;
 
 public class ServicioCompilacionZ {
 
-    public ResultadoCompilacionZ analizar(String codigoFuente) {
-        return analizar(codigoFuente, java.util.Map.of());
+    // Sin paquete: se asume que el archivo está en la raíz ("")
+    public ResultadoCompilacionZ analizar(String codigoFuente,
+                                          Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas) {
+        return analizar(codigoFuente, externas, "");
     }
 
-    public ResultadoCompilacionZ analizar(String codigoFuente, Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas) {
+    // Este es el metodo que hace el trabajo
+    public ResultadoCompilacionZ analizar(String codigoFuente,
+                                          Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas,
+                                          String paquete) {
 
         if (codigoFuente == null || codigoFuente.trim().isEmpty()) {
             return new ResultadoCompilacionZ(
@@ -33,7 +38,7 @@ public class ServicioCompilacionZ {
         }
 
         try {
-            return analizarInterno(codigoFuente, externas);
+            return analizarInterno(codigoFuente, externas, paquete);
         } catch (StackOverflowError soe) {
             return new ResultadoCompilacionZ(
                     false, null, null, null,
@@ -49,9 +54,7 @@ public class ServicioCompilacionZ {
         }
     }
 
-    private ResultadoCompilacionZ analizarInterno(String codigoFuente,
-                                                  java.util.Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas) {
-
+    private ResultadoCompilacionZ analizarInterno(String codigoFuente, Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas, String paquete) {
         // 1. LEXER (Z no necesita preprocesador de indentacion: usa llaves y ';' como Java)
         List<ErrorPosicional> erroresLexicos = new ArrayList<>();
 
@@ -133,7 +136,7 @@ public class ServicioCompilacionZ {
         ValidadorSemanticoZ validador = new ValidadorSemanticoZ();
         List<ErrorSemantico> erroresSemanticos;
         try {
-            erroresSemanticos = validador.analizar(programa, externas);
+            erroresSemanticos = validador.analizar(programa, externas, paquete);
         } catch (Exception e) {
             return new ResultadoCompilacionZ(
                     false, programa, codigoFuente, null,
