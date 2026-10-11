@@ -350,12 +350,22 @@ public class TablaSimbolosZ {
         return Optional.empty();
     }
 
-    /** Constructores de una clase (actual o externa). Los constructores no se heredan. */
+    /**
+     * Constructores de una clase (actual o externa). Los constructores no se heredan.
+     * Si la clase no declara ninguno, tiene un constructor por defecto implicito, sin parametros
+     * (los ejemplos del enunciado, como Animal o Impresora, no declaran constructores).
+     */
     public List<Firma> getConstructoresDe(String clase) {
-        if (clase == null) return List.of();
-        if (clase.equals(nombreClase)) return getConstructores(clase);
-        return buscarClaseExterna(clase)
-                .map(d -> d.constructores().getOrDefault(clase, List.of()))
-                .orElse(List.of());
+        if (clase == null || !esClaseConocida(clase)) return List.of();
+
+        List<Firma> declarados;
+        if (clase.equals(nombreClase)) {
+            declarados = getConstructores(clase);
+        } else {
+            declarados = clasesExternas.get(clase).constructores().getOrDefault(clase, List.of());
+        }
+        if (!declarados.isEmpty()) return declarados;
+
+        return List.of(new Firma(clase, List.of(), null, Visibilidad.PUBLICO, false, clase));
     }
 }

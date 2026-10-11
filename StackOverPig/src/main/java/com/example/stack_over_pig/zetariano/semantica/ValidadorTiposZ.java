@@ -16,6 +16,7 @@ import java.util.Optional;
  *   - Indexar algo que no es arreglo       -> tipoDeExpresion (ACCESO_ARRAY)
  *   - Acceso inválido a atributo/metodo    -> tipoDeExpresion (ACCESO_ATRIBUTO / LLAMADA_METODO)
  *   - Atributo no declarado                -> tipoDeExpresion (ACCESO_ATRIBUTO)
+ *   - Acceso no permitido (visibilidad)    -> tipoDeExpresion (ACCESO_ATRIBUTO / LLAMADAS / INSTANCIA_OBJETO)
  *   - Tipos incompatibles en binaria       -> tipoResultanteBinaria
  *   - División/módulo por cero             -> tipoResultanteBinaria
  *   - Tipos incompatibles en unaria        -> tipoDeExpresion (UNARIA)
@@ -30,6 +31,9 @@ import java.util.Optional;
  *   - Condición no booleana                -> validarCondicionBooleana
  *   - Retorno incompatible                 -> validarRetorno
  *   - Tipo no permitido en switch          -> validarTipoSwitch
+ *
+ * Herencia: un objeto de una clase hija se puede usar donde se espera uno de su clase padre
+ * (esAsignable), y entre varias sobrecargas aplicables gana la mas especifica.
  */
 public class ValidadorTiposZ {
 
@@ -74,8 +78,8 @@ public class ValidadorTiposZ {
             case LITERAL_CARACTER -> new TipoResuelto(CHAR, 0);
             case LITERAL_BOOL -> new TipoResuelto(BOOLEAN, 0);
             case LITERAL_NULO -> new TipoResuelto(NULO, 0);
-            case LISTA_LITERAL -> null;
             case OBJETO_ACTUAL -> new TipoResuelto(tabla.getNombreClase(), 0);
+            case LISTA_LITERAL -> null;
             case IDENTIFICADOR -> {
                 NodoExpr.Identificador id = (NodoExpr.Identificador) expr;
                 Optional<TablaSimbolosZ.SimboloVariable> simbolo = tabla.buscarVariable(id.nombre());
@@ -136,7 +140,7 @@ public class ValidadorTiposZ {
                             "'" + acceso.atributo() + "' no existe en la clase '" + tipoObjeto.base() + "'"));
                     yield null;
                 }
-                // NUEVO: si existe pero no es accesible, se reporta (y se sigue devolviendo el tipo)
+                // si existe pero no es accesible se reporta, y se sigue devolviendo el tipo
                 control.verificar(atributo.get().visibilidad(), atributo.get().claseDeclarante(),
                         acceso.atributo(), "El atributo", acceso.linea(), acceso.columna());
                 yield new TipoResuelto(atributo.get().tipo(), atributo.get().dimensiones());
@@ -203,6 +207,8 @@ public class ValidadorTiposZ {
 
                 if (esAsignable(siVerdadero, siFalso)) yield siVerdadero;
                 if (esAsignable(siFalso, siVerdadero)) yield siFalso;
+                String comun = ancestroComun(siVerdadero, siFalso);
+                if (comun != null) yield new TipoResuelto(comun, 0);
                 errores.add(new ErrorSemantico(t.linea(), t.columna(),
                         "Tipo incompatible",
                         "Las dos ramas del ternario tienen tipos incompatibles: '"
@@ -215,7 +221,6 @@ public class ValidadorTiposZ {
                 List<TipoResuelto> tiposArgs = llamada.argumentos().stream().map(this::tipoDeExpresion).toList();
                 TablaSimbolosZ.Firma firma = resolverSobrecarga(tabla.getMetodosDe(tabla.getNombreClase(), llamada.nombre()), tiposArgs,
                         llamada.linea(), llamada.columna(), llamada.nombre(), "Metodo");
-                // NUEVO
                 if (firma != null) {
                     control.verificar(firma.visibilidad(), firma.claseDeclarante(),
                             llamada.nombre(), "El método", llamada.linea(), llamada.columna());
@@ -240,7 +245,6 @@ public class ValidadorTiposZ {
                 TablaSimbolosZ.Firma firma = resolverSobrecarga(
                         tabla.getMetodosDe(tipoObjeto.base(), llamada.nombre()),
                         tiposArgs, llamada.linea(), llamada.columna(), llamada.nombre(), "Metodo");
-                // NUEVO
                 if (firma != null) {
                     control.verificar(firma.visibilidad(), firma.claseDeclarante(),
                             llamada.nombre(), "El método", llamada.linea(), llamada.columna());
@@ -255,12 +259,10 @@ public class ValidadorTiposZ {
                 if (!tabla.esClaseConocida(instancia.tipoClase())) yield null;
 
                 List<TipoResuelto> tiposArgs = instancia.argumentos().stream().map(this::tipoDeExpresion).toList();
-                // antes el resultado de resolverSobrecarga se ignoraba; ahora se guarda
                 TablaSimbolosZ.Firma constructor = resolverSobrecarga(
                         tabla.getConstructoresDe(instancia.tipoClase()),
                         tiposArgs, instancia.linea(), instancia.columna(),
                         instancia.tipoClase(), "Constructor");
-                // NUEVO
                 if (constructor != null) {
                     control.verificar(constructor.visibilidad(), constructor.claseDeclarante(),
                             instancia.tipoClase(), "El constructor", instancia.linea(), instancia.columna());
@@ -318,7 +320,10 @@ public class ValidadorTiposZ {
             case "==", "!=" -> {
                 boolean compatibles = izq.base().equals(der.base())
                         || (esNumerico(izq.base()) && esNumerico(der.base()))
-                        || NULO.equals(izq.base()) || NULO.equals(der.base());
+                        || NULO.equals(izq.base()) || NULO.equals(der.base())
+                        // dos objetos se pueden comparar si uno es de la misma jerarquia que el otro
+                        || tabla.esSubtipo(izq.base(), der.base())
+                        || tabla.esSubtipo(der.base(), izq.base());
                 if (compatibles) yield new TipoResuelto(BOOLEAN, 0);
                 reportarIncompatible(operador, izq, der, linea, columna);
                 yield null;
@@ -345,7 +350,11 @@ public class ValidadorTiposZ {
     }
 
     // COMPATIBILIDAD Y ASIGNACION
-    /** True si un valor de tipo 'origen' se puede asignar a uno de tipo 'destino'. */
+    /**
+     * True si un valor de tipo 'origen' se puede asignar a uno de tipo 'destino':
+     * mismo tipo, int a double, null a cualquier tipo no primitivo, o un objeto de una
+     * clase hija a una variable de su clase padre (Animal a = new Perro()).
+     */
     private boolean esAsignable(TipoResuelto destino, TipoResuelto origen) {
         if (NULO.equals(origen.base())) {
             return !esPrimitivo(destino.base());
@@ -355,7 +364,20 @@ public class ValidadorTiposZ {
             return destino.base().equals(origen.base());
         }
         if (destino.base().equals(origen.base())) return true;
+        if (tabla.esSubtipo(origen.base(), destino.base())) return true;
         return DOUBLE.equals(destino.base()) && INT.equals(origen.base());
+    }
+
+    /**
+     * Ancestro mas cercano que comparten dos tipos de objeto (Perro y Gato -> Animal),
+     * o null si no tienen ninguno. Se usa para el tipo de un ternario.
+     */
+    private String ancestroComun(TipoResuelto a, TipoResuelto b) {
+        if (a.dimensiones() > 0 || b.dimensiones() > 0) return null;
+        for (String candidato : tabla.cadenaDe(a.base())) {
+            if (tabla.esClaseConocida(candidato) && tabla.esSubtipo(b.base(), candidato)) return candidato;
+        }
+        return null;
     }
 
     /** Valida que una inicialización sea compatible con el tipo declarado. */
@@ -443,7 +465,7 @@ public class ValidadorTiposZ {
         }
     }
 
-    /** Valida que un 'return' sea compatible con el tipo de retorno del método. */
+    /** Valida que un 'return' sea compatible con el tipo de retorno del metodo. */
     public void validarRetorno(NodoSentencia.Retorno retorno, String tipoRetornoEsperado) {
         if (tipoRetornoEsperado == null) {
             if (retorno.valor() != null) {
@@ -482,10 +504,14 @@ public class ValidadorTiposZ {
         for (TablaSimbolosZ.Firma f : firmas) {
             if (coincideExacto(f, tiposArgs)) return f;
         }
-        // 2. Coincidencia con promoción int -> double.
+        // 2. Coincidencia con promoción int -> double o con subtipos (hijo donde se espera el padre).
         List<TablaSimbolosZ.Firma> candidatas = firmas.stream().filter(f -> coincideConPromocion(f, tiposArgs)).toList();
         if (candidatas.size() == 1) return candidatas.get(0);
         if (candidatas.size() > 1) {
+            // Gana la candidata cuyos parametros caben en los de todas las demas (la mas especifica).
+            TablaSimbolosZ.Firma masEspecifica = elegirMasEspecifica(candidatas);
+            if (masEspecifica != null) return masEspecifica;
+
             errores.add(new ErrorSemantico(linea, columna,
                     "Llamada ambigua", "Mas de una sobrecarga de '" + nombre + "' coincide con estos argumentos"));
             return null;
@@ -508,13 +534,41 @@ public class ValidadorTiposZ {
         return true;
     }
 
-    /** Compara firma y argumentos permitiendo promoción. */
+    /** Compara firma y argumentos permitiendo promoción y subtipos. */
     private boolean coincideConPromocion(TablaSimbolosZ.Firma f, List<TipoResuelto> tiposArgs) {
         if (f.parametros().size() != tiposArgs.size()) return false;
         for (int i = 0; i < tiposArgs.size(); i++) {
             TablaSimbolosZ.Parametro p = f.parametros().get(i);
             TipoResuelto destino = new TipoResuelto(p.tipo(), p.dimensiones());
             if (!esAsignable(destino, tiposArgs.get(i))) return false;
+        }
+        return true;
+    }
+
+    /** La candidata que es mas especifica que todas las demas, o null si ninguna lo es. */
+    private TablaSimbolosZ.Firma elegirMasEspecifica(List<TablaSimbolosZ.Firma> candidatas) {
+        for (TablaSimbolosZ.Firma f : candidatas) {
+            boolean ganaATodas = true;
+            for (TablaSimbolosZ.Firma g : candidatas) {
+                if (f != g && !esMasEspecifica(f, g)) {
+                    ganaATodas = false;
+                    break;
+                }
+            }
+            if (ganaATodas) return f;
+        }
+        return null;
+    }
+
+    /** 'f' es mas especifica que 'g' si cada parametro de 'f' se puede pasar donde 'g' espera el suyo. */
+    private boolean esMasEspecifica(TablaSimbolosZ.Firma f, TablaSimbolosZ.Firma g) {
+        for (int i = 0; i < f.parametros().size(); i++) {
+            TablaSimbolosZ.Parametro pf = f.parametros().get(i);
+            TablaSimbolosZ.Parametro pg = g.parametros().get(i);
+            if (!esAsignable(new TipoResuelto(pg.tipo(), pg.dimensiones()),
+                    new TipoResuelto(pf.tipo(), pf.dimensiones()))) {
+                return false;
+            }
         }
         return true;
     }
