@@ -1,5 +1,6 @@
 package com.example.stack_over_pig.zetariano.semantica;
 
+import com.example.stack_over_pig.zetariano.nodo.Visibilidad;
 import java.util.*;
 
 public class TablaSimbolosZ {
@@ -12,14 +13,17 @@ public class TablaSimbolosZ {
     /** Una variable declarada en un scope (local o parametro ya registrado como variable). */
     public record SimboloVariable(String nombre, String tipo, int dimensiones, Integer tamanoConocido) {}
 
-    /** Un atributo publico de la clase: 'String nombre;'. */
-    public record SimboloAtributo(String nombre, String tipo, int dimensiones) {}
+    /** Un atributo de la clase ('String nombre;') con su nivel de acceso y la clase que lo declara. */
+    public record SimboloAtributo(String nombre, String tipo, int dimensiones,
+                                  Visibilidad visibilidad, String claseDeclarante) {}
 
     /**
      * Una firma de constructor o metodo. 'nombre' se repite para todas las
      * sobrecargas de un mismo constructor/metodo; lo que las distingue es 'parametros'.
+     * 'claseDeclarante' es la clase donde esta escrito (importa cuando hay herencia).
      */
-    public record Firma(String nombre, List<Parametro> parametros, String tipoRetorno) {
+    public record Firma(String nombre, List<Parametro> parametros, String tipoRetorno,
+                        Visibilidad visibilidad, boolean esOverride, String claseDeclarante) {
         public List<String> tiposParametros() {
             return parametros.stream().map(Parametro::tipo).toList();
         }
@@ -42,6 +46,8 @@ public class TablaSimbolosZ {
 
     //la clase unica del archivo
     private String nombreClase;
+    private String superclase;              // null si la clase no usa 'extends'
+    private Visibilidad visibilidadClase;
     private final Map<String, SimboloAtributo> atributos = new LinkedHashMap<>();
 
     //nombre -> lista de firmas (para constructores y metodos, ambos soportan sobrecarga)
@@ -56,8 +62,10 @@ public class TablaSimbolosZ {
     }
 
     // CLASE
-    public void declararClase(String nombre) {
+    public void declararClase(String nombre, String superclase, Visibilidad visibilidad) {
         this.nombreClase = nombre;
+        this.superclase = superclase;
+        this.visibilidadClase = visibilidad;
         registro.add(new EntradaSimbolo(siguienteId++, nombre, Categoria.CLASE, nombre, 0, "global", alcanceActual()));
     }
 
@@ -65,14 +73,23 @@ public class TablaSimbolosZ {
         return nombreClase;
     }
 
+    /** Nombre de la superclase de la clase actual, o null si no hereda de ninguna. */
+    public String getSuperclase() {
+        return superclase;
+    }
+
+    public Visibilidad getVisibilidadClase() {
+        return visibilidadClase;
+    }
+
     // ATRIBUTOS
 
     /** Devuelve false si ya existe un atributo con ese nombre (no se permite repetir, a diferencia de los metodos). */
-    public boolean declararAtributo(String nombre, String tipo, int dimensiones) {
+    public boolean declararAtributo(String nombre, String tipo, int dimensiones, Visibilidad visibilidad) {
         if (atributos.containsKey(nombre)) {
             return false;
         }
-        atributos.put(nombre, new SimboloAtributo(nombre, tipo, dimensiones));
+        atributos.put(nombre, new SimboloAtributo(nombre, tipo, dimensiones, visibilidad, nombreClase));
         registro.add(new EntradaSimbolo(siguienteId++, nombre, Categoria.ATRIBUTO, tipo, 0, "clase", alcanceActual()));
         return true;
     }
@@ -144,9 +161,9 @@ public class TablaSimbolosZ {
      * orden) para este constructor -- eso si es error. Firmas distintas del mismo nombre
      * (sobrecarga real) se permiten y se acumulan en la lista.
      */
-    public boolean declararConstructor(String nombre, List<Parametro> parametros) {
+    public boolean declararConstructor(String nombre, List<Parametro> parametros, Visibilidad visibilidad) {
         List<Firma> firmas = constructores.computeIfAbsent(nombre, k -> new ArrayList<>());
-        Firma nueva = new Firma(nombre, parametros, null);
+        Firma nueva = new Firma(nombre, parametros, null, visibilidad, false, nombreClase);
         if (existeFirmaIdentica(firmas, nueva)) {
             return false;
         }
@@ -174,9 +191,10 @@ public class TablaSimbolosZ {
     }
 
     // METODOS (con sobrecarga)
-    public boolean declararMetodo(String nombre, List<Parametro> parametros, String tipoRetorno) {
+    public boolean declararMetodo(String nombre, List<Parametro> parametros, String tipoRetorno,
+                                  Visibilidad visibilidad, boolean esOverride) {
         List<Firma> firmas = metodos.computeIfAbsent(nombre, k -> new ArrayList<>());
-        Firma nueva = new Firma(nombre, parametros, tipoRetorno);
+        Firma nueva = new Firma(nombre, parametros, tipoRetorno, visibilidad, esOverride, nombreClase);
         if (existeFirmaIdentica(firmas, nueva)) {
             return false;
         }
@@ -236,10 +254,16 @@ public class TablaSimbolosZ {
     /**
      * Definición "resumida" de una clase .z externa al archivo actual.
      * No es la clase completa (no tiene cuerpos de métodos), solo lo necesario
-     * para resolver tipos, accesos a atributos y sobrecarga de métodos/constructores.
+     * para resolver tipos, accesos a atributos, sobrecarga y herencia.
+     *
+     * 'superclase' es null si no hereda de nadie. 'paquete' es la carpeta del archivo
+     * (relativa a la raiz del proyecto; "" si esta en la raiz).
      */
     public record DefinicionClaseExterna(
             String nombre,
+            String superclase,
+            Visibilidad visibilidad,
+            String paquete,
             Map<String, SimboloAtributo> atributos,
             Map<String, List<Firma>> constructores,
             Map<String, List<Firma>> metodos) {}

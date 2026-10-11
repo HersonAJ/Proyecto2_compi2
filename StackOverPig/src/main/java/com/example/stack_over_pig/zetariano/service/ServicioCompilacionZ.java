@@ -4,6 +4,7 @@ import com.example.stack_over_pig.y.errores.ErrorPosicional;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 import com.example.stack_over_pig.zetariano.Builder.ASTBuilderZ;
 import com.example.stack_over_pig.zetariano.nodo.*;
+import com.example.stack_over_pig.zetariano.semantica.ExtractorFirmasZ;
 import com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ;
 import com.example.stack_over_pig.zetariano.semantica.ValidadorSemanticoZ;
 import com.example.zetariano.analizador.gramatica.ZLexer;
@@ -12,6 +13,7 @@ import org.antlr.v4.runtime.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public class ServicioCompilacionZ {
 
@@ -161,8 +163,12 @@ public class ServicioCompilacionZ {
      * sin ejecutar ninguna validación semántica. Devuelve Optional.empty() si el archivo
      * no parsea o el AST no es un NodoPrograma.
      */
-    public static java.util.Optional<TablaSimbolosZ.DefinicionClaseExterna>
-    recolectarFirmas(String codigoFuente) {
+
+    public static Optional<TablaSimbolosZ.DefinicionClaseExterna> recolectarFirmas(String codigoFuente) {
+        return recolectarFirmas(codigoFuente, "");
+    }
+
+    public static Optional<TablaSimbolosZ.DefinicionClaseExterna> recolectarFirmas(String codigoFuente, String paquete) {
         if (codigoFuente == null || codigoFuente.trim().isEmpty()) return java.util.Optional.empty();
 
         try {
@@ -204,39 +210,8 @@ public class ServicioCompilacionZ {
             NodoAST nodo = builder.visit(tree);
             if (!(nodo instanceof NodoPrograma np)) return java.util.Optional.empty();
 
-            NodoClase clase = np.clase();
 
-            // 4. Construir DefinicionClaseExterna
-            java.util.Map<String, TablaSimbolosZ.SimboloAtributo> atributos = new java.util.LinkedHashMap<>();
-            for (NodoAtributoZ a : clase.atributos()) {
-                atributos.put(a.nombre(),
-                        new TablaSimbolosZ.SimboloAtributo(a.nombre(), a.tipo(), a.dimensiones()));
-            }
-
-            java.util.Map<String, java.util.List<TablaSimbolosZ.Firma>> constructores = new java.util.LinkedHashMap<>();
-            for (NodoConstructor c : clase.constructores()) {
-                java.util.List<TablaSimbolosZ.Parametro> params = new java.util.ArrayList<>();
-                for (NodoParametroZ p : c.parametros()) {
-                    params.add(new TablaSimbolosZ.Parametro(p.nombre(), p.tipo(), 0));
-                }
-                constructores
-                        .computeIfAbsent(c.nombre(), k -> new java.util.ArrayList<>())
-                        .add(new TablaSimbolosZ.Firma(c.nombre(), params, null));
-            }
-
-            java.util.Map<String, java.util.List<TablaSimbolosZ.Firma>> metodos = new java.util.LinkedHashMap<>();
-            for (NodoMetodo m : clase.metodos()) {
-                java.util.List<TablaSimbolosZ.Parametro> params = new java.util.ArrayList<>();
-                for (NodoParametroZ p : m.parametros()) {
-                    params.add(new TablaSimbolosZ.Parametro(p.nombre(), p.tipo(), 0));
-                }
-                metodos
-                        .computeIfAbsent(m.nombre(), k -> new java.util.ArrayList<>())
-                        .add(new TablaSimbolosZ.Firma(m.nombre(), params, m.tipoRetorno()));
-            }
-
-            return java.util.Optional.of(new TablaSimbolosZ.DefinicionClaseExterna(
-                    clase.nombre(), atributos, constructores, metodos));
+            return java.util.Optional.of(ExtractorFirmasZ.extraer(np.clase(), paquete));
 
         } catch (Exception e) {
             return java.util.Optional.empty();

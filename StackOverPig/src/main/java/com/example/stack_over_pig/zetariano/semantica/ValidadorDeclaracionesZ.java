@@ -29,13 +29,13 @@ public class ValidadorDeclaracionesZ {
 
     /** Declara el nombre de la clase en la tabla. */
     public void declararClase(NodoClase clase) {
-        tabla.declararClase(clase.nombre());
+        tabla.declararClase(clase.nombre(), clase.superclase(), clase.visibilidad());
     }
 
     /** Declara todos los atributos de la clase. */
     public void declararAtributos(NodoClase clase) {
         for (NodoAtributoZ a: clase.atributos()) {
-            if (!tabla.declararAtributo(a.nombre(), a.tipo(), a.dimensiones())) {
+            if (!tabla.declararAtributo(a.nombre(), a.tipo(), a.dimensiones(), a.visibilidad())) {
                 errores.add(new ErrorSemantico(a.linea(), a.columna(), "Declaracion duplicada",
                         "El atributo '" + a.nombre() + "' ya fue declarado en la clase"));
             }
@@ -53,7 +53,7 @@ public class ValidadorDeclaracionesZ {
             }
 
             List<TablaSimbolosZ.Parametro> parametros = construirParametros(c.parametros(), c.nombre());
-            if (!tabla.declararConstructor(c.nombre(), parametros)) {
+            if (!tabla.declararConstructor(c.nombre(), parametros, c.visibilidad())) {
                 errores.add(new ErrorSemantico(c.linea(), c.columna(), "Declaracion duplicada",
                         "Ya existe un constructor de '" + c.nombre() + "' con esa misma firma"));
             }
@@ -64,7 +64,7 @@ public class ValidadorDeclaracionesZ {
     public void declararMetodos(NodoClase clase) {
         for (NodoMetodo m : clase.metodos()) {
             List<TablaSimbolosZ.Parametro> parametros = construirParametros(m.parametros(), m.nombre());
-            if (!tabla.declararMetodo(m.nombre(), parametros, m.tipoRetorno())) {
+            if (!tabla.declararMetodo(m.nombre(), parametros, m.tipoRetorno(), m.visibilidad(), m.esOverride())) {
                 errores.add(new ErrorSemantico(m.linea(), m.columna(), "Declaracion duplicada",
                         "Ya existe un metodo '" +  m.nombre() + "' con esa misma firma"));
             }
