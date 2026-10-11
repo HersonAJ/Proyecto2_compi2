@@ -334,6 +334,22 @@ public class TablaSimbolosZ {
         return resultado;
     }
 
+    /**
+     * El metodo de un ancestro que 'nombreMetodo' (con esos tipos de parametros) de 'clase' sobrescribe.
+     * Solo mira los ancestros, nunca la propia clase, e ignora los 'private' (no se heredan).
+     */
+    public Optional<Firma> buscarMetodoSobrescrito(String clase, String nombreMetodo, List<String> tiposParametros) {
+        List<String> cadena = jerarquia.cadena(clase);
+        for (int i = 1; i < cadena.size(); i++) {
+            for (Firma f : metodosDe(cadena.get(i)).getOrDefault(nombreMetodo, List.of())) {
+                if (f.visibilidad() != Visibilidad.PRIVADO && f.tiposParametros().equals(tiposParametros)) {
+                    return Optional.of(f);
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
     /** Constructores de una clase (actual o externa). Los constructores no se heredan. */
     public List<Firma> getConstructoresDe(String clase) {
         if (clase == null) return List.of();

@@ -26,6 +26,7 @@ public class ValidadorSemanticoZ {
     private final ValidadorAlcanceZ alcance = new ValidadorAlcanceZ(tabla, errores);
     private final ValidadorFlujoZ flujo = new ValidadorFlujoZ(errores);
     private final ValidadorTiposZ tipos = new ValidadorTiposZ(tabla, errores);
+    private final ValidadorHerenciaZ herencia = new ValidadorHerenciaZ(tabla, errores);
     private String tipoRetornoActual;
 
 
@@ -52,6 +53,7 @@ public class ValidadorSemanticoZ {
         declaraciones.declararAtributos(clase);
         declaraciones.declararConstructores(clase);
         declaraciones.declararMetodos(clase);
+        herencia.validar(clase);
 
         for (NodoAtributoZ a : clase.atributos()) {
             alcance.validarTipoDeclarado(a.tipo(), a.linea(), a.columna());
