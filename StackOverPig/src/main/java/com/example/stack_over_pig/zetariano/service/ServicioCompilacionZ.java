@@ -13,6 +13,7 @@ import org.antlr.v4.runtime.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public class ServicioCompilacionZ {
@@ -21,8 +22,7 @@ public class ServicioCompilacionZ {
         return analizar(codigoFuente, java.util.Map.of());
     }
 
-    public ResultadoCompilacionZ analizar(String codigoFuente,
-                                          java.util.Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas) {
+    public ResultadoCompilacionZ analizar(String codigoFuente, Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas) {
 
         if (codigoFuente == null || codigoFuente.trim().isEmpty()) {
             return new ResultadoCompilacionZ(

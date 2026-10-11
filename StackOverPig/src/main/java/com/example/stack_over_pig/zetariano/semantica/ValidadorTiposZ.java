@@ -208,7 +208,7 @@ public class ValidadorTiposZ {
             case LLAMADA_FUNCION -> {
                 NodoExpr.LlamadaFuncion llamada = (NodoExpr.LlamadaFuncion) expr;
                 List<TipoResuelto> tiposArgs = llamada.argumentos().stream().map(this::tipoDeExpresion).toList();
-                TablaSimbolosZ.Firma firma = resolverSobrecarga(tabla.getMetodos(llamada.nombre()), tiposArgs,
+                TablaSimbolosZ.Firma firma = resolverSobrecarga(tabla.getMetodosDe(tabla.getNombreClase(), llamada.nombre()), tiposArgs,
                         llamada.linea(), llamada.columna(), llamada.nombre(), "Metodo");
                 yield firma == null || firma.tipoRetorno() == null ? null : new TipoResuelto(firma.tipoRetorno(), 0);
             }

@@ -1,6 +1,8 @@
 package com.example.stack_over_pig.zetariano.semantica;
 
+import com.example.stack_over_pig.comun.JerarquiaClases;
 import com.example.stack_over_pig.zetariano.nodo.Visibilidad;
+
 import java.util.*;
 
 public class TablaSimbolosZ {
@@ -57,6 +59,12 @@ public class TablaSimbolosZ {
     private final List<EntradaSimbolo> registro = new ArrayList<>();
     private int siguienteId = 1;
 
+    //herencia: sabe la superclase de la clase actual y la de las clases externas
+    private final JerarquiaClases jerarquia = new JerarquiaClases(this::superclaseDe);
+
+    //paquete (carpeta) del archivo que se esta analizando; "" si esta en la raiz
+    private String paqueteActual = "";
+
     public TablaSimbolosZ() {
         pila.push(new Scope("global"));
     }
@@ -82,6 +90,20 @@ public class TablaSimbolosZ {
         return visibilidadClase;
     }
 
+    public void setPaqueteActual(String paquete) {
+        this.paqueteActual = paquete == null ? "" : paquete;
+    }
+
+    public String getPaqueteActual() {
+        return paqueteActual;
+    }
+
+    /** Paquete de una clase (la actual o una externa); "" si no se conoce. */
+    public String paqueteDe(String clase) {
+        if (clase.equals(nombreClase)) return paqueteActual;
+        return buscarClaseExterna(clase).map(DefinicionClaseExterna::paquete).orElse("");
+    }
+
     // ATRIBUTOS
 
     /** Devuelve false si ya existe un atributo con ese nombre (no se permite repetir, a diferencia de los metodos). */
@@ -94,6 +116,7 @@ public class TablaSimbolosZ {
         return true;
     }
 
+    /** Atributo declarado directamente en la clase actual (no mira los ancestros). */
     public Optional<SimboloAtributo> buscarAtributo(String nombre) {
         return Optional.ofNullable(atributos.get(nombre));
     }
@@ -141,16 +164,25 @@ public class TablaSimbolosZ {
         return true;
     }
 
+    /** true si 'nombre' es una variable o parametro local visible desde el scope actual (no un atributo). */
+    public boolean existeVariableLocal(String nombre) {
+        for (Scope s : pila) {
+            if (s.variables.containsKey(nombre)) return true;
+        }
+        return false;
+    }
+
     /**
      * Busca primero en los scopes locales (de adentro hacia afuera), y si no aparece,
-     * revisa los atributos de la clase -- esto modela el 'this.' implicito de Zetariano.
+     * revisa los atributos de la clase y de sus ancestros -- esto modela el 'this.' implicito.
+     * (La visibilidad de lo heredado todavia no se revisa aqui.)
      */
     public Optional<SimboloVariable> buscarVariable(String nombre) {
         for (Scope s : pila) {
             SimboloVariable v = s.variables.get(nombre);
             if (v != null) return Optional.of(v);
         }
-        return buscarAtributo(nombre)
+        return buscarAtributoEn(nombreClase, nombre)
                 .map(a -> new SimboloVariable(a.nombre(), a.tipo(), a.dimensiones(), null));
     }
 
@@ -173,19 +205,6 @@ public class TablaSimbolosZ {
         return true;
     }
 
-    /** Resuelve cual sobrecarga de constructor aplica segun la cantidad y tipos de argumentos dados. */
-    public Optional<Firma> buscarConstructor(String nombre, List<String> tiposArgumentos) {
-        Optional<Firma> local = buscarFirma(constructores.get(nombre), tiposArgumentos);
-        if (local.isPresent()) return local;
-        // Buscar en clases externas
-        for (DefinicionClaseExterna def : clasesExternas.values()) {
-            List<Firma> firmas = def.constructores().get(nombre);
-            Optional<Firma> externa = buscarFirma(firmas, tiposArgumentos);
-            if (externa.isPresent()) return externa;
-        }
-        return Optional.empty();
-    }
-
     public List<Firma> getConstructores(String nombre) {
         return constructores.getOrDefault(nombre, List.of());
     }
@@ -204,18 +223,7 @@ public class TablaSimbolosZ {
         return true;
     }
 
-    public Optional<Firma> buscarMetodo(String nombre, List<String> tiposArgumentos) {
-        Optional<Firma> local = buscarFirma(metodos.get(nombre), tiposArgumentos);
-        if (local.isPresent()) return local;
-        // Buscar en clases externas
-        for (DefinicionClaseExterna def : clasesExternas.values()) {
-            List<Firma> firmas = def.metodos().get(nombre);
-            Optional<Firma> externa = buscarFirma(firmas, tiposArgumentos);
-            if (externa.isPresent()) return externa;
-        }
-        return Optional.empty();
-    }
-
+    /** Metodos con ese nombre declarados directamente en la clase actual (no mira los ancestros). */
     public List<Firma> getMetodos(String nombre) {
         return metodos.getOrDefault(nombre, List.of());
     }
@@ -228,20 +236,6 @@ public class TablaSimbolosZ {
             }
         }
         return false;
-    }
-
-    /**
-     * Compara por cantidad y tipo EXACTO de argumentos.
-     * ( llamar con un 'int' cuando la firma declarada espera 'double')
-     */
-    private Optional<Firma> buscarFirma(List<Firma> firmas, List<String> tiposArgumentos) {
-        if (firmas == null) return Optional.empty();
-        for (Firma f : firmas) {
-            if (f.tiposParametros().equals(tiposArgumentos)) {
-                return Optional.of(f);
-            }
-        }
-        return Optional.empty();
     }
 
     // UI / DEPURACION
@@ -284,23 +278,63 @@ public class TablaSimbolosZ {
         return nombre.equals(nombreClase) || clasesExternas.containsKey(nombre);
     }
 
-    /** Busca un atributo en la clase actual o en una clase externa. */
+    // HERENCIA
+
+    /** Superclase de una clase (la actual o una externa); null si no hereda de ninguna o no se conoce. */
+    private String superclaseDe(String clase) {
+        if (clase.equals(nombreClase)) return superclase;
+        return buscarClaseExterna(clase).map(DefinicionClaseExterna::superclase).orElse(null);
+    }
+
+    /** La clase y sus ancestros, de la mas derivada a la raiz. */
+    public List<String> cadenaDe(String clase) {
+        return jerarquia.cadena(clase);
+    }
+
+    /** true si 'sub' es 'sup' o hereda de ella. */
+    public boolean esSubtipo(String sub, String sup) {
+        return jerarquia.esSubtipo(sub, sup);
+    }
+
+    /** true si la herencia de 'clase' es circular. */
+    public boolean tieneHerenciaCircular(String clase) {
+        return jerarquia.tieneCiclo(clase);
+    }
+
+    private Map<String, SimboloAtributo> atributosDe(String clase) {
+        if (clase.equals(nombreClase)) return atributos;
+        return buscarClaseExterna(clase).map(DefinicionClaseExterna::atributos).orElse(Map.of());
+    }
+
+    private Map<String, List<Firma>> metodosDe(String clase) {
+        if (clase.equals(nombreClase)) return metodos;
+        return buscarClaseExterna(clase).map(DefinicionClaseExterna::metodos).orElse(Map.of());
+    }
+
+    /** Busca un atributo en la clase indicada y, si no esta ahi, en sus ancestros (gana el mas cercano). */
     public Optional<SimboloAtributo> buscarAtributoEn(String clase, String atributo) {
-        if (clase == null) return Optional.empty();
-        if (clase.equals(nombreClase)) return buscarAtributo(atributo);
-        return buscarClaseExterna(clase).map(d -> d.atributos().get(atributo));
+        for (String c : jerarquia.cadena(clase)) {
+            SimboloAtributo a = atributosDe(c).get(atributo);
+            if (a != null) return Optional.of(a);
+        }
+        return Optional.empty();
     }
 
-    /** Métodos de una clase (actual o externa) con ese nombre. */
+    /**
+     * Metodos con ese nombre de la clase y de sus ancestros. Si una clase derivada declara
+     * una firma identica a la de su padre, la del padre queda sobrescrita y no se incluye.
+     */
     public List<Firma> getMetodosDe(String clase, String nombreMetodo) {
-        if (clase == null) return List.of();
-        if (clase.equals(nombreClase)) return getMetodos(nombreMetodo);
-        return buscarClaseExterna(clase)
-                .map(d -> d.metodos().getOrDefault(nombreMetodo, List.of()))
-                .orElse(List.of());
+        List<Firma> resultado = new ArrayList<>();
+        for (String c : jerarquia.cadena(clase)) {
+            for (Firma f : metodosDe(c).getOrDefault(nombreMetodo, List.of())) {
+                if (!existeFirmaIdentica(resultado, f)) resultado.add(f);
+            }
+        }
+        return resultado;
     }
 
-    /** Constructores de una clase (actual o externa). */
+    /** Constructores de una clase (actual o externa). Los constructores no se heredan. */
     public List<Firma> getConstructoresDe(String clase) {
         if (clase == null) return List.of();
         if (clase.equals(nombreClase)) return getConstructores(clase);
