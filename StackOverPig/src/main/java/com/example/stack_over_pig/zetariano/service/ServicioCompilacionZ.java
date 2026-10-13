@@ -11,6 +11,9 @@ import com.example.zetariano.analizador.gramatica.ZLexer;
 import com.example.zetariano.analizador.gramatica.ZParser;
 import org.antlr.v4.runtime.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -18,13 +21,20 @@ import java.util.Optional;
 
 public class ServicioCompilacionZ {
 
-    // Sin paquete: se asume que el archivo está en la raíz ("")
+    public ResultadoCompilacionZ analizar(String codigoFuente) {
+        return analizar(codigoFuente, Map.of());
+    }
+
+    /** Analiza un codigo cuyo archivo esta en la raiz del proyecto (paquete ""). */
     public ResultadoCompilacionZ analizar(String codigoFuente,
                                           Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas) {
         return analizar(codigoFuente, externas, "");
     }
 
-    // Este es el metodo que hace el trabajo
+    /**
+     * Analiza un codigo dado el resto de clases que puede usar ('externas', p. ej. sus superclases)
+     * y el paquete (carpeta) en el que esta su archivo.
+     */
     public ResultadoCompilacionZ analizar(String codigoFuente,
                                           Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas,
                                           String paquete) {
@@ -54,7 +64,35 @@ public class ServicioCompilacionZ {
         }
     }
 
-    private ResultadoCompilacionZ analizarInterno(String codigoFuente, Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas, String paquete) {
+    /**
+     * Analiza un archivo .z buscando en su carpeta las superclases que necesite.
+     * El paquete es la carpeta del archivo relativa a 'carpetaRaiz'.
+     */
+    public ResultadoCompilacionZ analizarArchivo(Path archivo, Path carpetaRaiz) {
+        String contenido;
+        try {
+            contenido = Files.readString(archivo);
+        } catch (IOException e) {
+            return new ResultadoCompilacionZ(
+                    false, null, null, null,
+                    List.of(), List.of(), List.of(),
+                    List.of("No se pudo leer '" + archivo + "': " + e.getMessage())
+            );
+        }
+        CargadorClasesZ cargador = new CargadorClasesZ(carpetaRaiz);
+        Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas = cargador.cargarAncestros(archivo, Map.of());
+        return analizar(contenido, externas, cargador.paqueteDe(archivo));
+    }
+
+    /** Igual que arriba, tomando como raiz la carpeta del propio archivo (paquete ""). */
+    public ResultadoCompilacionZ analizarArchivo(Path archivo) {
+        return analizarArchivo(archivo, archivo.toAbsolutePath().getParent());
+    }
+
+    private ResultadoCompilacionZ analizarInterno(String codigoFuente,
+                                                  Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas,
+                                                  String paquete) {
+
         // 1. LEXER (Z no necesita preprocesador de indentacion: usa llaves y ';' como Java)
         List<ErrorPosicional> erroresLexicos = new ArrayList<>();
 
@@ -153,7 +191,7 @@ public class ServicioCompilacionZ {
                 exitoso,
                 programa,
                 codigoFuente,
-                tabla,                     // ← ahora ya no es null
+                tabla,
                 List.of(),
                 List.of(),
                 erroresSemanticos,
@@ -164,15 +202,16 @@ public class ServicioCompilacionZ {
     /**
      * Parsea un archivo .z y extrae SOLO las firmas (atributos, constructores, métodos)
      * sin ejecutar ninguna validación semántica. Devuelve Optional.empty() si el archivo
-     * no parsea o el AST no es un NodoPrograma.
+     * no parsea o el AST no es un NodoPrograma. El paquete es "" (raiz del proyecto).
      */
-
     public static Optional<TablaSimbolosZ.DefinicionClaseExterna> recolectarFirmas(String codigoFuente) {
         return recolectarFirmas(codigoFuente, "");
     }
 
-    public static Optional<TablaSimbolosZ.DefinicionClaseExterna> recolectarFirmas(String codigoFuente, String paquete) {
-        if (codigoFuente == null || codigoFuente.trim().isEmpty()) return java.util.Optional.empty();
+    /** Igual que arriba, indicando el paquete (carpeta) en el que esta el archivo. */
+    public static Optional<TablaSimbolosZ.DefinicionClaseExterna> recolectarFirmas(String codigoFuente,
+                                                                                   String paquete) {
+        if (codigoFuente == null || codigoFuente.trim().isEmpty()) return Optional.empty();
 
         try {
             // 1. Lexer (silencioso: si hay errores, abortamos)
@@ -188,7 +227,7 @@ public class ServicioCompilacionZ {
 
             CommonTokenStream tokens = new CommonTokenStream(lexer);
             tokens.fill();
-            if (huboError[0]) return java.util.Optional.empty();
+            if (huboError[0]) return Optional.empty();
 
             // 2. Parser (silencioso)
             ZParser parser = new ZParser(tokens);
@@ -204,20 +243,20 @@ public class ServicioCompilacionZ {
             try {
                 tree = parser.programa();
             } catch (Exception e) {
-                return java.util.Optional.empty();
+                return Optional.empty();
             }
-            if (huboError[0]) return java.util.Optional.empty();
+            if (huboError[0]) return Optional.empty();
 
             // 3. AST
             ASTBuilderZ builder = new ASTBuilderZ();
             NodoAST nodo = builder.visit(tree);
-            if (!(nodo instanceof NodoPrograma np)) return java.util.Optional.empty();
+            if (!(nodo instanceof NodoPrograma np)) return Optional.empty();
 
-
-            return java.util.Optional.of(ExtractorFirmasZ.extraer(np.clase(), paquete));
+            // 4. Definicion resumida de la clase
+            return Optional.of(ExtractorFirmasZ.extraer(np.clase(), paquete));
 
         } catch (Exception e) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
     }
 }
