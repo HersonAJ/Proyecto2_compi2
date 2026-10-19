@@ -368,4 +368,26 @@ public class TablaSimbolosZ {
 
         return List.of(new Firma(clase, List.of(), null, Visibilidad.PUBLICO, false, clase));
     }
+
+    /** Métodos con ese nombre empezando por la superclase (salta la clase actual). */
+    public List<Firma> getMetodosEnPadre(String clase, String nombreMetodo) {
+        List<Firma> resultado = new ArrayList<>();
+        List<String> cadena = jerarquia.cadena(clase);
+        for (int i = 1; i < cadena.size(); i++) {
+            for (Firma f : metodosDe(cadena.get(i)).getOrDefault(nombreMetodo, List.of())) {
+                if (!existeFirmaIdentica(resultado, f)) resultado.add(f);
+            }
+        }
+        return resultado;
+    }
+
+    /** Busca un constructor del padre que coincida con los tipos de argumentos. */
+    public Optional<Firma> buscarConstructorEnPadre(String clase, List<String> tiposArgumentos) {
+        String padre = superclaseDe(clase);
+        if (padre == null || !esClaseConocida(padre)) return Optional.empty();
+        for (Firma f : getConstructoresDe(padre)) {
+            if (f.tiposParametros().equals(tiposArgumentos)) return Optional.of(f);
+        }
+        return Optional.empty();
+    }
 }

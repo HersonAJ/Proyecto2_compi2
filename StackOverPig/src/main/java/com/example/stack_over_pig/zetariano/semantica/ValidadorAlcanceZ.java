@@ -94,6 +94,11 @@ public class ValidadorAlcanceZ {
                 for (NodoExpr elem : ((NodoExpr.ListaLiteral) expr).elementos()) resolverExpresion(elem);
             }
 
+            case LLAMADA_METODO_SUPER -> {
+                NodoExpr.LlamadaMetodoSuper llamada = (NodoExpr.LlamadaMetodoSuper) expr;
+                for (NodoExpr arg : llamada.argumentos()) resolverExpresion(arg);
+            }
+
             case LITERAL_ENTERO, LITERAL_DECIMAL, LITERAL_CADENA, LITERAL_CARACTER, LITERAL_BOOL, LITERAL_NULO, OBJETO_ACTUAL -> {}
         }
     }

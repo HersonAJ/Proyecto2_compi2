@@ -282,6 +282,25 @@ public class ValidadorTiposZ {
                 }
                 yield new TipoResuelto(arreglo.tipoBase(), arreglo.dimensiones().size());
             }
+
+            case LLAMADA_METODO_SUPER -> {
+                NodoExpr.LlamadaMetodoSuper llamada = (NodoExpr.LlamadaMetodoSuper) expr;
+                List<TipoResuelto> tiposArgs = llamada.argumentos().stream().map(this::tipoDeExpresion).toList();
+
+                List<TablaSimbolosZ.Firma> candidatas = tabla.getMetodosEnPadre(tabla.getNombreClase(), llamada.nombre());
+                if (candidatas.isEmpty()) {
+                    errores.add(new ErrorSemantico(llamada.linea(), llamada.columna(),
+                            "Metodo no declarado en el padre",
+                            "'" + llamada.nombre() + "' no existe en ninguna superclase de '" + tabla.getNombreClase() + "'"));
+                    yield null;
+                }
+
+                TablaSimbolosZ.Firma firma = resolverSobrecarga(candidatas, tiposArgs,
+                        llamada.linea(), llamada.columna(), llamada.nombre(), "Metodo");
+                yield firma == null || firma.tipoRetorno() == null
+                        ? null
+                        : new TipoResuelto(firma.tipoRetorno(), 0);
+            }
         };
     }
 

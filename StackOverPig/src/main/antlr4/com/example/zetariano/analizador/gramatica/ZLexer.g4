@@ -7,6 +7,7 @@ PROTECTED   : 'protected';
 CLASS       : 'class';
 EXTENDS     : 'extends';
 THIS        : 'this';
+SUPER       : 'super';
 VOID        : 'void';
 NEW         : 'new';
 RETURN      : 'return';

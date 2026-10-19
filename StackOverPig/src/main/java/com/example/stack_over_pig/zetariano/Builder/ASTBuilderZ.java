@@ -541,6 +541,20 @@ public class ASTBuilderZ extends ZParserBaseVisitor<NodoAST> {
         return new NodoExpr.Ternaria(linea(ctx), columna(ctx), condicion, siVerdadero, siFalso);
     }
 
+    //metodos para la herencia
+    @Override
+    public NodoAST visitLlamadaSuperConstructor(ZParser.LlamadaSuperConstructorContext ctx) {
+        List<NodoExpr> argumentos = construirArgumentos(ctx.argumentos());
+        return new NodoSentencia.LlamadaSuperConstructor(linea(ctx), columna(ctx), argumentos);
+    }
+
+    @Override
+    public NodoAST visitExprLlamadaMetodoSuper(ZParser.ExprLlamadaMetodoSuperContext ctx) {
+        String nombre = ctx.ID().getText();
+        List<NodoExpr> argumentos = construirArgumentos(ctx.argumentos());
+        return new NodoExpr.LlamadaMetodoSuper(linea(ctx), columna(ctx), nombre, argumentos);
+    }
+
     // HELPERS
     private int linea(org.antlr.v4.runtime.ParserRuleContext ctx) { return ctx.getStart().getLine(); }
 

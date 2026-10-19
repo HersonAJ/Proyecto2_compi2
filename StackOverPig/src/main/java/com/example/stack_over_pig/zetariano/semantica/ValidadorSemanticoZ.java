@@ -26,8 +26,9 @@ public class ValidadorSemanticoZ {
     private final ValidadorAlcanceZ alcance = new ValidadorAlcanceZ(tabla, errores);
     private final ValidadorFlujoZ flujo = new ValidadorFlujoZ(errores);
     private final ValidadorTiposZ tipos = new ValidadorTiposZ(tabla, errores);
-    private final ValidadorHerenciaZ herencia = new ValidadorHerenciaZ(tabla, errores);
+    private final ValidadorHerenciaZ herencia = new ValidadorHerenciaZ(tabla, errores, tipos);
     private String tipoRetornoActual;
+    private boolean enConstructor = false;
 
 
     public List<ErrorSemantico> analizar(NodoPrograma programa) {
@@ -54,6 +55,7 @@ public class ValidadorSemanticoZ {
         declaraciones.declararConstructores(clase);
         declaraciones.declararMetodos(clase);
         herencia.validar(clase);
+        herencia.validarConstructores(clase);
 
         for (NodoAtributoZ a : clase.atributos()) {
             alcance.validarTipoDeclarado(a.tipo(), a.linea(), a.columna());
@@ -64,7 +66,9 @@ public class ValidadorSemanticoZ {
 
             validarTiposDeParametros(c.parametros());
             tipoRetornoActual = null;
+            enConstructor = true;
             procesarCuerpoConParametros(c.parametros(), c.cuerpo());
+            enConstructor = false;
         }
 
         // LOOP 2: METODOS
@@ -128,6 +132,19 @@ public class ValidadorSemanticoZ {
                 NodoExpr expr = ((NodoSentencia.Imprimir) s).expresion();
                 alcance.resolverExpresion(expr);
                 tipos.tipoDeExpresion(expr);
+            }
+
+            case LLAMADA_SUPER_CONSTRUCTOR -> {
+                NodoSentencia.LlamadaSuperConstructor sup = (NodoSentencia.LlamadaSuperConstructor) s;
+                if (!enConstructor) {
+                    errores.add(new ErrorSemantico(sup.linea(), sup.columna(),
+                            "super invalido",
+                            "super(...) solo puede usarse dentro de un constructor"));
+                }
+                for (NodoExpr arg : sup.argumentos()) {
+                    alcance.resolverExpresion(arg);
+                    tipos.tipoDeExpresion(arg);
+                }
             }
             case LEER -> { }
             case ROMPER -> flujo.validarRomper((NodoSentencia.Romper) s);

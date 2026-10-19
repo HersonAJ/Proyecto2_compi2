@@ -53,6 +53,7 @@ bloque : LLAVE_IZQ sentencia* LLAVE_DER
 sentencia   : declaracion
             | asignacion
             | expresionSentencia
+            | llamadaSuperConstructor
             | condicional
             | switchSentencia
             | cicloFor
@@ -138,6 +139,10 @@ romper : BREAK PUNTO_COMA
 continuar : CONTINUE PUNTO_COMA
           ;
 
+
+llamadaSuperConstructor : SUPER PAR_IZQ argumentos? PAR_DER PUNTO_COMA
+                        ;
+
 //expresiones, de mayor a menor precedencia
 expresion  : PAR_IZQ expresion PAR_DER                                          # ExprParentesis
            | NEW ID PAR_IZQ argumentos? PAR_DER                                 # ExprInstanciacionObjeto
@@ -146,6 +151,7 @@ expresion  : PAR_IZQ expresion PAR_DER                                          
            | THIS                                                               # ExprThis
            | ID                                                                 # ExprIdentificador
            | expresion PUNTO ID PAR_IZQ argumentos? PAR_DER                     # ExprLlamadaMetodo
+           | SUPER PUNTO ID PAR_IZQ argumentos? PAR_DER                         # ExprLlamadaMetodoSuper
            | expresion PUNTO ID                                                 # ExprAccesoAtributo
            | expresion COR_IZQ expresion COR_DER                                # ExprAccesoArray
            | ID PAR_IZQ argumentos? PAR_DER                                     # ExprLlamadaFuncion

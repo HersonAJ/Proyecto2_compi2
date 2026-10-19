@@ -15,5 +15,6 @@ public enum TipoNodoSentencia {
     IMPRIMIR,
     LEER,
     ROMPER,
-    CONTINUAR
+    CONTINUAR,
+    LLAMADA_SUPER_CONSTRUCTOR,
 }

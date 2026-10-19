@@ -28,7 +28,8 @@ public sealed interface NodoSentencia extends NodoAST permits
         NodoSentencia.Imprimir,
         NodoSentencia.Leer,
         NodoSentencia.Romper,
-        NodoSentencia.Continuar {
+        NodoSentencia.Continuar,
+        NodoSentencia.LlamadaSuperConstructor {
 
     TipoNodoSentencia tipoNodo();
 
@@ -126,5 +127,10 @@ public sealed interface NodoSentencia extends NodoAST permits
     /** 'continue;'  ->  goto de continuación del ciclo activo. */
     record Continuar(int linea, int columna) implements NodoSentencia {
         @Override public TipoNodoSentencia tipoNodo() { return TipoNodoSentencia.CONTINUAR; }
+    }
+
+    /** 'super(args);'  ->  llamada al constructor del padre. Solo dentro de un constructor. */
+    record LlamadaSuperConstructor(int linea, int columna, List<NodoExpr> argumentos) implements NodoSentencia {
+        @Override public TipoNodoSentencia tipoNodo() { return TipoNodoSentencia.LLAMADA_SUPER_CONSTRUCTOR; }
     }
 }

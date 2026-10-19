@@ -26,7 +26,8 @@ public sealed interface NodoExpr extends NodoAST permits
         NodoExpr.LlamadaMetodo,
         NodoExpr.InstanciaObjeto,
         NodoExpr.ArregloNuevo,
-        NodoExpr.ObjetoActual{
+        NodoExpr.ObjetoActual,
+        NodoExpr.LlamadaMetodoSuper {
 
     TipoNodoExpr tipoNodo();
 
@@ -129,5 +130,10 @@ public sealed interface NodoExpr extends NodoAST permits
     /** 'this' */
     record ObjetoActual(int linea, int columna) implements NodoExpr {
         @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.OBJETO_ACTUAL; }
+    }
+
+    /** 'super.metodo(args)'  ->  llamada a método del padre. */
+    record LlamadaMetodoSuper(int linea, int columna, String nombre, List<NodoExpr> argumentos) implements NodoExpr {
+        @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.LLAMADA_METODO_SUPER; }
     }
 }

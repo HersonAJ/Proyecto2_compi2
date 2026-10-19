@@ -1,10 +1,7 @@
 package com.example.stack_over_pig.zetariano.semantica;
 
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
-import com.example.stack_over_pig.zetariano.nodo.NodoClase;
-import com.example.stack_over_pig.zetariano.nodo.NodoMetodo;
-import com.example.stack_over_pig.zetariano.nodo.NodoParametroZ;
-import com.example.stack_over_pig.zetariano.nodo.Visibilidad;
+import com.example.stack_over_pig.zetariano.nodo.*;
 
 import java.util.List;
 import java.util.Objects;
@@ -36,10 +33,12 @@ public class ValidadorHerenciaZ {
 
     private final TablaSimbolosZ tabla;
     private final List<ErrorSemantico> errores;
+    private final ValidadorTiposZ tipos;
 
-    public ValidadorHerenciaZ(TablaSimbolosZ tabla, List<ErrorSemantico> errores) {
+    public ValidadorHerenciaZ(TablaSimbolosZ tabla, List<ErrorSemantico> errores, ValidadorTiposZ tipos) {
         this.tabla = tabla;
         this.errores = errores;
+        this.tipos = tipos;
     }
 
     /** Se llama despues de declarar la clase, sus atributos, constructores y metodos. */
@@ -114,6 +113,99 @@ public class ValidadorHerenciaZ {
     /** true si se conocen todas las clases de la cadena de herencia (si falta alguna, no se puede asegurar nada). */
     private boolean jerarquiaCompleta(NodoClase clase) {
         return tabla.cadenaDe(clase.nombre()).stream().allMatch(tabla::esClaseConocida);
+    }
+
+    /** Valida los constructores: super() implícito, super() explícito y visibilidad. */
+    public void validarConstructores(NodoClase clase) {
+        String padre = clase.superclase();
+        if (padre == null || !tabla.esClaseConocida(padre)) return;
+
+        boolean padreTieneConstructorSinParams = tabla.getConstructoresDe(padre)
+                .stream()
+                .anyMatch(f -> f.parametros().isEmpty() && f.visibilidad() != Visibilidad.PRIVADO);
+
+        if (clase.constructores().isEmpty()) {
+            // Constructor implícito sin parámetros -> llama a super() sin params
+            if (!padreTieneConstructorSinParams) {
+                errores.add(new ErrorSemantico(clase.linea(), clase.columna(),
+                        "Falta constructor",
+                        "La clase '" + clase.nombre() + "' no declara constructores y '" + padre
+                                + "' no tiene un constructor sin parametros visible"));
+            }
+            return;
+        }
+
+        for (NodoConstructor c : clase.constructores()) {
+            // Buscar si el cuerpo tiene una LlamadaSuperConstructor.
+            NodoSentencia.LlamadaSuperConstructor llamada = null;
+            for (NodoSentencia s : c.cuerpo()) {
+                if (s instanceof NodoSentencia.LlamadaSuperConstructor lsc) {
+                    llamada = lsc;
+                    break;
+                }
+            }
+
+            if (llamada == null) {
+                // Sin super() explícito: el padre debe tener constructor sin params visible.
+                if (!padreTieneConstructorSinParams) {
+                    errores.add(new ErrorSemantico(c.linea(), c.columna(),
+                            "Falta llamada a super",
+                            "El constructor de '" + clase.nombre()
+                                    + "' debe llamar a un constructor de '" + padre
+                                    + "' porque '" + padre + "' no tiene un constructor sin parametros visible"));
+                }
+                continue;
+            }
+
+            // Debe ser la primera instrucción.
+            if (c.cuerpo().get(0) != llamada) {
+                errores.add(new ErrorSemantico(llamada.linea(), llamada.columna(),
+                        "super mal ubicado",
+                        "super(...) debe ser la primera instruccion del constructor"));
+            }
+
+            // Resolver el constructor del padre según los tipos de argumentos.
+            List<String> tiposArgs = llamada.argumentos().stream()
+                    .map(this::tipoDeExpresionComoString)
+                    .toList();
+
+            // Verificar que exista un constructor del padre con esos tipos.
+            boolean existe = tabla.getConstructoresDe(padre).stream()
+                    .anyMatch(f -> f.tiposParametros().equals(tiposArgs));
+
+            if (!existe) {
+                errores.add(new ErrorSemantico(llamada.linea(), llamada.columna(),
+                        "Constructor del padre no encontrado",
+                        "'" + padre + "' no tiene un constructor que acepte esos argumentos"));
+                continue;
+            }
+
+            // Verificar visibilidad.
+            boolean visible = tabla.getConstructoresDe(padre).stream()
+                    .filter(f -> f.tiposParametros().equals(tiposArgs))
+                    .anyMatch(f -> esVisibleDesdeLaSubclase(f.visibilidad(), padre, clase.nombre()));
+
+            if (!visible) {
+                errores.add(new ErrorSemantico(llamada.linea(), llamada.columna(),
+                        "Constructor del padre no visible",
+                        "El constructor de '" + padre + "' no es visible desde '" + clase.nombre() + "'"));
+            }
+        }
+    }
+
+    private boolean esVisibleDesdeLaSubclase(Visibilidad v, String padre, String subclase) {
+        return switch (v) {
+            case PUBLICO, PROTEGIDO -> true;
+            case PAQUETE -> tabla.paqueteDe(padre).equals(tabla.paqueteDe(subclase));
+            case PRIVADO -> false;
+        };
+    }
+
+    /** Tipo de una expresión como string para comparar con parámetros (sin validar). */
+    private String tipoDeExpresionComoString(NodoExpr expr) {
+        // Reutilizamos la lógica de tipos existente. Si no la tienes accesible,
+        // hay que inyectar ValidadorTiposZ o exponer un método en ValidadorSemanticoZ.
+        return tipos.tipoDeExpresion(expr) == null ? "?" : tipos.tipoDeExpresion(expr).base();
     }
 
     private String nombreTipo(String tipo) {
