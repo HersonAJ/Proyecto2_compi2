@@ -34,6 +34,7 @@ LITTERA   : 'littera' ;
 BOOL      : 'bool' ;
 VERUM     : 'verum' ;
 FALSUS    : 'falsus' ;
+NULL_LIT  : 'null';
 
 // Operadores de dos caracteres
 LEER      : '<<' ;

@@ -39,6 +39,7 @@ declaracionVar
 
 variable
     : ESTO ID DOSPUNTOS tipoPrimitivo expr? PUNTOCOMA
+    | ESTO ID DOSPUNTOS NULL_LIT DOSPUNTOS tipo PUNTOCOMA
     | ESTO ID DOSPUNTOS expr PUNTOCOMA
     ;
 
@@ -162,7 +163,8 @@ listaArgumentos
 expr
     : PAR_A expr PAR_C                                          # exprParentesis
     | MENOS expr                                                # exprNegacionUnaria
-    | NOVUS ID PAR_A listaArgumentos? PAR_C                     # exprInstanciaObjeto
+    | NOVUS ID PAR_A listaArgumentos? PAR_C (DOSPUNTOS ID)?     # exprInstanciaObjeto
+    | NULL_LIT                                                  # exprNulo
     | LLAVE_A listaExpr? LLAVE_C                                # exprLiteralCompuesto
     | (INC | DEC) ID                                            # exprIncDecPrefijo
     | ID (INC | DEC)                                            # exprIncDecPostfijo

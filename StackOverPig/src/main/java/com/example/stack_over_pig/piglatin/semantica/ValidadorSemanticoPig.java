@@ -78,6 +78,7 @@ public class ValidadorSemanticoPig {
 
                 alcance.resolverExpresion(d.inicializacion());
                 tipos.validarInicializacion(d);
+                objetos.validarNulo(d);
 
                 if (esInstanciaDeObjeto(d)) {
                     declaraciones.declararObjeto(d);
@@ -122,6 +123,7 @@ public class ValidadorSemanticoPig {
                 }
                 alcance.resolverExpresion(d.inicializacion());
                 tipos.validarInicializacion(d);
+                objetos.validarNulo(d);
                 if (esInstanciaDeObjeto(d)) {
                     declaraciones.declararObjeto(d);
                 } else {

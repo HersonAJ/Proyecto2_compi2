@@ -120,7 +120,15 @@ public class ValidadorTiposPig {
             }
             case INSTANCIA_OBJETO -> {
                 NodoExpr.InstanciaObjeto inst = (NodoExpr.InstanciaObjeto) expr;
-                yield new TipoResuelto(inst.tipoClase(), 0);
+                validarInstancia(inst);   // ← nuevo
+                String tipo = inst.tipoDeclarado() != null ? inst.tipoDeclarado() : inst.tipoClase();
+                yield new TipoResuelto(tipo, 0);
+            }
+
+            case LITERAL_NULO -> {
+                // 'null' sin tipo contextual: solo es válido en declaraciones con tipo explícito,
+                // que se manejan aparte. Aquí devolvemos null para no propagar un tipo falso.
+                yield null;
             }
             case LISTA_LITERAL -> {
                 yield null;
@@ -283,5 +291,24 @@ public class ValidadorTiposPig {
         return NUMERUS.equals(tipo) || DECIMALIS.equals(tipo)
                 || "entero".equals(tipo) || "flotante".equals(tipo)
                 || "int".equals(tipo) || "double".equals(tipo);
+    }
+
+    // en ValidadorTiposPig
+    private void validarInstancia(NodoExpr.InstanciaObjeto inst) {
+        if (inst.tipoDeclarado() == null) return;
+
+        if (tabla.buscarClase(inst.tipoDeclarado()).isEmpty()) {
+            errores.add(new ErrorSemantico(inst.linea(), inst.columna(),
+                    "Tipo declarado desconocido",
+                    "'" + inst.tipoDeclarado() + "' no corresponde a ninguna clase conocida"));
+            return;
+        }
+
+        if (!inst.tipoClase().equals(inst.tipoDeclarado())
+                && !tabla.esSubtipo(inst.tipoClase(), inst.tipoDeclarado())) {
+            errores.add(new ErrorSemantico(inst.linea(), inst.columna(),
+                    "Subtipo invalido",
+                    "'" + inst.tipoClase() + "' no es subtipo de '" + inst.tipoDeclarado() + "'"));
+        }
     }
 }

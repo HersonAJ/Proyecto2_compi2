@@ -316,11 +316,18 @@ public class VentanaPrincipal {
     private void analizarZ(EditorCodigo editor) {
         panelSalida.imprimirConsola("Analizando " + editor.getArchivoActual().getName() + " como .z");
 
+        File archivo = editor.getArchivoActual();
         File raiz = obtenerCarpetaRaiz(editor);
-        java.util.Map<String, com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ.DefinicionClaseExterna>
-                externas = recolectarFirmasZ(editor.getArchivoActual(), raiz);
 
-        ResultadoCompilacionZ resultado = servicioZ.analizar(editor.getTexto(), externas);
+        if (raiz == null) {
+            panelSalida.agregarError("UI", -1, -1,
+                    "No se pudo determinar la carpeta raíz del proyecto.");
+            panelSalida.enfocarErrores();
+            return;
+        }
+
+        ResultadoCompilacionZ resultado = servicioZ.analizarArchivo(
+                archivo.toPath(), raiz.toPath());
 
         for (ErrorPosicional e : resultado.getErroresLexicos()) {
             panelSalida.agregarError("Léxico", e.getLinea(), e.getColumna(), e.getMensaje());

@@ -1,6 +1,7 @@
 package com.example.stack_over_pig.piglatin.semantica;
 
 import com.example.stack_over_pig.piglatin.nodo.NodoExpr;
+import com.example.stack_over_pig.piglatin.nodo.NodoSentencia;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 
 import java.util.ArrayList;
@@ -203,5 +204,46 @@ public class ValidadorObjetosPig {
             }
         }
         return null;
+    }
+
+    /** Valida 'null : Tipo' en una declaración. El tipo debe ser una clase. */
+    public void validarNulo(NodoSentencia.DeclaracionVariable d) {
+        if (!(d.inicializacion() instanceof NodoExpr.LiteralNulo)) return;
+
+        // Si 'tipo' es null, la gramática permitió 'null' sin tipo; ya debería fallar en el parser.
+        if (d.tipo() == null) {
+            errores.add(new ErrorSemantico(d.linea(), d.columna(),
+                    "Tipo requerido",
+                    "null requiere un tipo explícito: 'esto x : null : Clase;'"));
+            return;
+        }
+
+        // El tipo debe ser una clase conocida, no un primitivo.
+        if (tabla.buscarClase(d.tipo()).isEmpty()) {
+            errores.add(new ErrorSemantico(d.linea(), d.columna(),
+                    "Tipo inválido",
+                    "null solo puede asignarse a tipos de clase, se encontró '" + d.tipo() + "'"));
+        }
+    }
+
+    /** Valida 'novus X(...) : Y'. X debe ser igual a Y o subtipo de Y. */
+    public void validarTipoDeclarado(NodoExpr.InstanciaObjeto inst) {
+        if (inst.tipoDeclarado() == null) return;
+
+        // El tipo declarado debe ser una clase conocida.
+        if (tabla.buscarClase(inst.tipoDeclarado()).isEmpty()) {
+            errores.add(new ErrorSemantico(inst.linea(), inst.columna(),
+                    "Tipo declarado desconocido",
+                    "'" + inst.tipoDeclarado() + "' no corresponde a ninguna clase conocida"));
+            return;
+        }
+
+        // El tipo real (tipoClase) debe ser igual al declarado o subtipo.
+        if (!inst.tipoClase().equals(inst.tipoDeclarado())
+                && !tabla.esSubtipo(inst.tipoClase(), inst.tipoDeclarado())) {
+            errores.add(new ErrorSemantico(inst.linea(), inst.columna(),
+                    "Subtipo invalido",
+                    "'" + inst.tipoClase() + "' no es subtipo de '" + inst.tipoDeclarado() + "'"));
+        }
     }
 }

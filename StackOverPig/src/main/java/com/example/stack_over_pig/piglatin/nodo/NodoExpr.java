@@ -17,7 +17,8 @@ public sealed interface NodoExpr extends NodoAST permits
         NodoExpr.Unaria,
         NodoExpr.LlamadaFuncion,
         NodoExpr.LlamadaMetodo,
-        NodoExpr.InstanciaObjeto {
+        NodoExpr.InstanciaObjeto,
+        NodoExpr.LiteralNulo {
 
     TipoNodoExpr tipoNodo();
 
@@ -46,6 +47,11 @@ public sealed interface NodoExpr extends NodoAST permits
     /** 'verum' / 'falsus' (bool). */
     record LiteralBool(int linea, int columna, boolean valor) implements NodoExpr {
         @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.LITERAL_BOOL; }
+    }
+
+    /** 'null'  ->  literal nulo. */
+    record LiteralNulo(int linea, int columna) implements NodoExpr {
+        @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.LITERAL_NULO; }
     }
 
     /** '{1, 2, 3}': solo válido como inicializador de arreglo o struct. */
@@ -105,7 +111,10 @@ public sealed interface NodoExpr extends NodoAST permits
 
     /** 'novus Clase(args)' */
     record InstanciaObjeto(int linea, int columna, String tipoClase,
-                           List<NodoExpr> argumentos) implements NodoExpr {
+                           List<NodoExpr> argumentos, String tipoDeclarado) implements NodoExpr {
+        public InstanciaObjeto(int linea, int columna, String tipoClase, List<NodoExpr> argumentos) {
+            this(linea, columna, tipoClase, argumentos, null);
+        }
         @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.INSTANCIA_OBJETO; }
     }
 }

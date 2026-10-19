@@ -2,11 +2,13 @@ package com.example.stack_over_pig.piglatin.semantica;
 
 import com.example.stack_over_pig.piglatin.nodo.NodoImportacion;
 import com.example.stack_over_pig.y.ast.*;
+import com.example.stack_over_pig.y.errores.ErrorPosicional;
 import com.example.stack_over_pig.y.errores.ResultadoCompilacionY;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 import com.example.stack_over_pig.y.service.ServicioCompilacionY;
 import com.example.stack_over_pig.zetariano.nodo.*;
 import com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ;
+import com.example.stack_over_pig.zetariano.service.CargadorClasesZ;
 import com.example.stack_over_pig.zetariano.service.ResultadoCompilacionZ;
 import com.example.stack_over_pig.zetariano.service.ServicioCompilacionZ;
 
@@ -61,12 +63,24 @@ public class ValidadorImportacionesPig {
         // (por ejemplo, ListaDoble.z usa la clase Nodo declarada en Nodo.z)
         // antes de validar ninguno de ellos.
         Map<String, TablaSimbolosZ.DefinicionClaseExterna> firmasZ = new LinkedHashMap<>();
+        CargadorClasesZ cargador = new CargadorClasesZ(carpetaRaiz);
+
         for (NodoImportacion imp : importaciones) {
             if (!imp.ruta().endsWith(".z")) continue;
             String contenido = leerContenidoDeImport(imp);
             if (contenido == null) continue; // el error ya quedó registrado
+
             ServicioCompilacionZ.recolectarFirmas(contenido)
                     .ifPresent(def -> firmasZ.put(def.nombre(), def));
+
+            // Cargar tambien los ancestros del .z desde su carpeta (para que
+            // al analizar la clase hija sus superclases ya esten disponibles).
+            Path archivoZ = carpetaRaiz.resolve(convertirRuta(imp.ruta()));
+            if (Files.exists(archivoZ)) {
+                Map<String, TablaSimbolosZ.DefinicionClaseExterna> ancestros =
+                        cargador.cargarAncestros(archivoZ, firmasZ);
+                firmasZ.putAll(ancestros);
+            }
         }
 
         // PASADA 2: procesar cada importación con las firmas ya disponibles.
@@ -224,6 +238,13 @@ public class ValidadorImportacionesPig {
         ResultadoCompilacionZ resultado = servicioZ.analizar(contenido, firmasZ);
 
         if (!resultado.isExitoso()) {
+            System.err.println("=== ERRORES EN " + ruta + " ===");
+            for (ErrorSemantico e : resultado.getErroresSemanticos()) {
+                System.err.println("  [" + e.categoria() + "] línea " + e.linea() + ", col " + e.columna() + ": " + e.mensaje());
+            }
+            for (ErrorPosicional e : resultado.getErroresSintacticos()) {
+                System.err.println("  [sintáctico] línea " + e.getLinea() + ", col " + e.getColumna() + ": " + e.getMensaje());
+            }
             errores.add(new ErrorSemantico(imp.linea(), imp.columna(),
                     "Error en archivo importado",
                     "El archivo '" + ruta + "' tiene errores: "
@@ -282,7 +303,7 @@ public class ValidadorImportacionesPig {
             }
 
             TablaSimbolosPig.DefinicionClase def = new TablaSimbolosPig.DefinicionClase(
-                    clase.nombre(), atributos, constructores, metodos);
+                    clase.nombre(), clase.superclase(), atributos, constructores, metodos);
             tabla.declararClase(def);
             //estructurasImportadas.add(clase.aEstructuraC());
 

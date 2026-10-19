@@ -165,9 +165,19 @@ public class ValidadorHerenciaZ {
             }
 
             // Resolver el constructor del padre según los tipos de argumentos.
-            List<String> tiposArgs = llamada.argumentos().stream()
-                    .map(this::tipoDeExpresionComoString)
-                    .toList();
+// Declarar los parámetros en un scope temporal para poder resolver los tipos de los argumentos.
+            tabla.entrarScope("validar-super");
+            for (NodoParametroZ p : c.parametros()) {
+                tabla.declararVariable(p.nombre(), p.tipo());
+            }
+            List<String> tiposArgs;
+            try {
+                tiposArgs = llamada.argumentos().stream()
+                        .map(this::tipoDeExpresionComoString)
+                        .toList();
+            } finally {
+                tabla.salirScope();
+            }
 
             // Verificar que exista un constructor del padre con esos tipos.
             boolean existe = tabla.getConstructoresDe(padre).stream()

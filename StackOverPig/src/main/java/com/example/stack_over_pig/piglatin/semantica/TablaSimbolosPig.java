@@ -1,5 +1,7 @@
 package com.example.stack_over_pig.piglatin.semantica;
 
+import com.example.stack_over_pig.comun.JerarquiaClases;
+
 import java.util.*;
 
 public class TablaSimbolosPig {
@@ -38,7 +40,9 @@ public class TablaSimbolosPig {
     public record Firma(String nombre, List<Parametro> parametros, String tipoRetorno) {}
 
     //definicion de una clase importada .z
-    public record DefinicionClase(String nombre, Map<String, AtributoClase> atributos,
+    //'superclase' es null si la clase no hereda de ninguna (o si el .z no declaro 'extends')
+    public record DefinicionClase(String nombre, String superclase,
+                                  Map<String, AtributoClase> atributos,
                                   List<Firma> constructores, List<Firma> metodos) {}
 
     //entrad del registro para la UI
@@ -61,6 +65,9 @@ public class TablaSimbolosPig {
     private final Map<String, DefinicionEstructura> estructuras = new LinkedHashMap<>();
     private final Map<String, DefinicionFuncion> funciones = new LinkedHashMap<>();
     private final Map<String, DefinicionClase> clases = new LinkedHashMap<>();
+
+    //jerarquia de clases para responder esSubtipo / ciclo
+    private final JerarquiaClases jerarquia = new JerarquiaClases(this::superclaseDe);
 
     private final List<EntradaSimbolo> registro = new ArrayList<>();
     private int siguienteId = 1;
@@ -156,6 +163,19 @@ public class TablaSimbolosPig {
 
     public Optional<DefinicionClase> buscarClase(String nombre) {
         return Optional.ofNullable(clases.get(nombre));
+    }
+
+    // HERENCIA
+
+    /** Superclase de una clase importada; null si no hereda de nadie o no se conoce. */
+    private String superclaseDe(String clase) {
+        DefinicionClase def = clases.get(clase);
+        return def != null ? def.superclase() : null;
+    }
+
+    /** true si 'sub' es 'sup' o hereda de ella (directa o indirectamente). */
+    public boolean esSubtipo(String sub, String sup) {
+        return jerarquia.esSubtipo(sub, sup);
     }
 
     //Consultas

@@ -66,6 +66,7 @@ public class ASTBuilderPig extends PigParserBaseVisitor<NodoAST> {
     @Override
     public NodoAST visitVariable(PigParser.VariableContext ctx) {
         String nombre = ctx.ID().getText();
+
         // Caso 1: tipo primitivo con inicialización opcional
         if (ctx.tipoPrimitivo() != null) {
             String tipo = ctx.tipoPrimitivo().getText();
@@ -73,13 +74,18 @@ public class ASTBuilderPig extends PigParserBaseVisitor<NodoAST> {
             return new NodoSentencia.DeclaracionVariable(linea(ctx), columna(ctx), tipo, nombre, inicializacion);
         }
 
-        // Caso 2: expresión (por ejemplo, novus Persona(...))
-        NodoExpr inicializacion = (NodoExpr) visit(ctx.expr());
+        // Caso 2: null con tipo explícito -> 'esto x : null : Tipo ;'
+        if (ctx.NULL_LIT() != null) {
+            String tipo = ctx.tipo().getText();
+            NodoExpr inicializacion = new NodoExpr.LiteralNulo(linea(ctx), columna(ctx));
+            return new NodoSentencia.DeclaracionVariable(linea(ctx), columna(ctx), tipo, nombre, inicializacion);
+        }
 
-        // Si es una instancia de objeto, extraer el tipo de ahí.
+        // Caso 3: expresión (incluye 'novus ... : Tipo')
+        NodoExpr inicializacion = (NodoExpr) visit(ctx.expr());
         String tipo = null;
         if (inicializacion instanceof NodoExpr.InstanciaObjeto inst) {
-            tipo = inst.tipoClase();
+            tipo = inst.tipoDeclarado() != null ? inst.tipoDeclarado() : inst.tipoClase();
         }
         return new NodoSentencia.DeclaracionVariable(linea(ctx), columna(ctx), tipo, nombre, inicializacion);
     }
@@ -467,9 +473,14 @@ public class ASTBuilderPig extends PigParserBaseVisitor<NodoAST> {
     /** 'novus Clase(args)'  ->  NodoExpr.InstanciaObjeto. */
     @Override
     public NodoAST visitExprInstanciaObjeto(PigParser.ExprInstanciaObjetoContext ctx) {
-        String tipo = ctx.ID().getText();
+        // ctx.ID() ahora puede devolver 1 o 2 IDs:
+        //   novus Persona(...)          -> [Persona]
+        //   novus Persona(...) : Persona -> [Persona, Persona]
+        String tipoClase = ctx.ID(0).getText();
+        String tipoDeclarado = ctx.ID().size() > 1 ? ctx.ID(1).getText() : null;
+
         List<NodoExpr> argumentos = construirArgumentos(ctx.listaArgumentos());
-        return new NodoExpr.InstanciaObjeto(linea(ctx), columna(ctx), tipo, argumentos);
+        return new NodoExpr.InstanciaObjeto(linea(ctx), columna(ctx), tipoClase, argumentos, tipoDeclarado);
     }
 
     @Override
@@ -486,6 +497,11 @@ public class ASTBuilderPig extends PigParserBaseVisitor<NodoAST> {
         NodoExpr izq = (NodoExpr) visit(izqCtx);
         NodoExpr der = (NodoExpr) visit(derCtx);
         return new NodoExpr.Binaria(linea(ctx), columna(ctx), operador, izq, der);
+    }
+
+    @Override
+    public NodoAST visitExprNulo(PigParser.ExprNuloContext ctx) {
+        return new NodoExpr.LiteralNulo(linea(ctx), columna(ctx));
     }
 
     // HELPERS
