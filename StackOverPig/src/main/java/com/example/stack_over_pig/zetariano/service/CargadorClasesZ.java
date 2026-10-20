@@ -77,4 +77,24 @@ public class CargadorClasesZ {
             return Optional.empty();
         }
     }
+
+    /**
+     * Carga todas las clases .z del proyecto (recursivamente desde la raiz),
+     * excluyendo el archivo indicado. Se usa en Zetariano, que no tiene 'import'.
+     */
+    public Map<String, DefinicionClaseExterna> cargarTodasLasClases(Path archivoExcluido) {
+        Map<String, DefinicionClaseExterna> resultado = new LinkedHashMap<>();
+        Path excluido = archivoExcluido.toAbsolutePath().normalize();
+
+        try (java.util.stream.Stream<Path> stream = Files.walk(carpetaRaiz)) {
+            stream.filter(p -> p.toString().toLowerCase().endsWith(".z"))
+                    .filter(p -> !p.toAbsolutePath().normalize().equals(excluido))
+                    .forEach(p -> leerFirmas(p)
+                            .ifPresent(def -> resultado.put(def.nombre(), def)));
+        } catch (IOException e) {
+            // silencioso
+        }
+
+        return resultado;
+    }
 }

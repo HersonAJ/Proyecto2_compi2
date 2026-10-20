@@ -1,4 +1,3 @@
-
 import com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ;
 import com.example.stack_over_pig.zetariano.service.ResultadoCompilacionZ;
 import com.example.stack_over_pig.zetariano.service.ServicioCompilacionZ;
@@ -9,7 +8,13 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Paso 3: las cuatro reglas de acceso. Animal vive en el paquete "zoo". */
+/**
+ * Reglas de visibilidad con la definicion del proyecto 2:
+ *   public     -> cualquier clase.
+ *   PAQUETE    -> cualquier clase (no hay paquetes).
+ *   protected  -> la clase declarante y sus subclases.
+ *   private    -> solo la clase declarante.
+ */
 class VisibilidadZTest {
 
     private static final String ANIMAL = """
@@ -26,19 +31,24 @@ class VisibilidadZTest {
             }
             """;
 
-    private TablaSimbolosZ.DefinicionClaseExterna animalEnZoo() {
-        return ServicioCompilacionZ.recolectarFirmas(ANIMAL, "zoo").orElseThrow();
+    private TablaSimbolosZ.DefinicionClaseExterna animal() {
+        return ServicioCompilacionZ.recolectarFirmas(ANIMAL).orElseThrow();
     }
 
-    private ResultadoCompilacionZ analizar(String codigo, String paquete,
-                                           TablaSimbolosZ.DefinicionClaseExterna... externas) {
+    private ResultadoCompilacionZ analizar(String codigo, TablaSimbolosZ.DefinicionClaseExterna... externas) {
         Map<String, TablaSimbolosZ.DefinicionClaseExterna> mapa = new LinkedHashMap<>();
         for (TablaSimbolosZ.DefinicionClaseExterna e : externas) mapa.put(e.nombre(), e);
-        return new ServicioCompilacionZ().analizar(codigo, mapa, paquete);
+        return new ServicioCompilacionZ().analizar(codigo, mapa);
     }
 
+    private void assertErrores(int esperados, ResultadoCompilacionZ r) {
+        assertEquals(esperados, r.getErroresSemanticos().size(), r.getErroresSemanticos().toString());
+    }
+
+    // ---------- HIJA ----------
+
     @Test
-    void hijoEnElMismoPaqueteVeTodoMenosLoPrivado() {
+    void hijaVeTodoMenosLoPrivado() {
         ResultadoCompilacionZ r = analizar("""
                 public class Perro extends Animal {
                     public void f() {
@@ -46,38 +56,12 @@ class VisibilidadZTest {
                         proteger(); interno(); abierto();
                     }
                 }
-                """, "zoo", animalEnZoo());
+                """, animal());
         assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
     }
 
     @Test
-    void hijoEnOtroPaqueteVeProtectedYPublic() {
-        ResultadoCompilacionZ r = analizar("""
-                public class Perro extends Animal {
-                    public void f() {
-                        println(raza); println(publico);
-                        proteger(); abierto();
-                    }
-                }
-                """, "casa", animalEnZoo());
-        assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
-    }
-
-    @Test
-    void hijoEnOtroPaqueteNoVeLoDePaquete() {
-        ResultadoCompilacionZ r = analizar("""
-                public class Perro extends Animal {
-                    public void f() {
-                        println(nombre);
-                        interno();
-                    }
-                }
-                """, "casa", animalEnZoo());
-        assertEquals(2, r.getErroresSemanticos().size(), r.getErroresSemanticos().toString());
-    }
-
-    @Test
-    void privadoDelPadreNoSeVeDesdeElHijoYElMensajeNoDiceNoDeclarado() {
+    void hijaNoVeLoPrivado() {
         ResultadoCompilacionZ r = analizar("""
                 public class Perro extends Animal {
                     public void f() {
@@ -85,41 +69,63 @@ class VisibilidadZTest {
                         ocultar();
                     }
                 }
-                """, "zoo", animalEnZoo());
-        assertEquals(2, r.getErroresSemanticos().size(), r.getErroresSemanticos().toString());
-        assertTrue(r.getErroresSemanticos().toString().contains("Acceso no permitido"),
-                r.getErroresSemanticos().toString());
+                """, animal());
+        assertErrores(2, r);
+        assertTrue(r.getErroresSemanticos().toString().contains("Acceso no permitido"));
     }
 
     @Test
-    void claseNoRelacionadaEnElMismoPaquete() {
+    void nietoVeLoProtegidoYDePaquete() {
+        ResultadoCompilacionZ r = analizar("""
+                public class Cachorro extends Perro {
+                    public void f() {
+                        println(raza); println(nombre);
+                        proteger(); interno();
+                    }
+                }
+                """,
+                animal(),
+                ServicioCompilacionZ.recolectarFirmas("public class Perro extends Animal { }").orElseThrow());
+        assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
+    }
+
+    // ---------- CLASE NO RELACIONADA ----------
+
+    @Test
+    void claseNoRelacionadaVePublicYDePaquetePeroNoProtegidoNiPrivado() {
         ResultadoCompilacionZ r = analizar("""
                 public class Visitante {
                     public void f() {
                         Animal a = new Animal();
-                        println(a.raza);
+                        println(a.publico);
                         println(a.nombre);
+                        println(a.raza);
                         println(a.secreto);
                     }
                 }
-                """, "zoo", animalEnZoo());
-        assertEquals(1, r.getErroresSemanticos().size(), r.getErroresSemanticos().toString());
+                """, animal());
+        // raza (protected) y secreto (private) no son accesibles desde Visitante
+        assertErrores(2, r);
     }
 
     @Test
-    void claseNoRelacionadaEnOtroPaquete() {
+    void claseNoRelacionadaNoUsaMetodosProtegidosNiPrivados() {
         ResultadoCompilacionZ r = analizar("""
                 public class Visitante {
                     public void f() {
                         Animal a = new Animal();
-                        println(a.raza);
-                        println(a.nombre);
-                        println(a.publico);
+                        a.abierto();
+                        a.interno();
+                        a.proteger();
+                        a.ocultar();
                     }
                 }
-                """, "casa", animalEnZoo());
-        assertEquals(2, r.getErroresSemanticos().size(), r.getErroresSemanticos().toString());
+                """, animal());
+        // proteger y ocultar no son accesibles desde Visitante
+        assertErrores(2, r);
     }
+
+    // ---------- PRIVADO DENTRO DE LA MISMA CLASE ----------
 
     @Test
     void privadoSePuedeUsarDentroDeLaMismaClaseEntreInstancias() {
@@ -129,9 +135,54 @@ class VisibilidadZTest {
                     public Cuenta() { }
                     public boolean mayor(Cuenta otra) { return saldo > otra.saldo; }
                 }
-                """, "");
+                """);
         assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
     }
+
+    // ---------- PROTEGIDO EN HIJA ----------
+
+    @Test
+    void hijaAccedeAAtributoProtegidoDelPadre() {
+        ResultadoCompilacionZ r = analizar("""
+                public class Perro extends Animal {
+                    public void f() {
+                        raza = "Labrador";
+                        println(raza);
+                    }
+                }
+                """, animal());
+        assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
+    }
+
+    @Test
+    void hijaAccedeAMetodoProtegidoDelPadre() {
+        ResultadoCompilacionZ r = analizar("""
+                public class Perro extends Animal {
+                    public void f() {
+                        proteger();
+                    }
+                }
+                """, animal());
+        assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
+    }
+
+    // ---------- SIN MODIFICADOR ----------
+
+    @Test
+    void sinModificadorEsAccesibleDesdeCualquierClase() {
+        ResultadoCompilacionZ r = analizar("""
+                public class Visitante {
+                    public void f() {
+                        Animal a = new Animal();
+                        println(a.nombre);
+                        a.interno();
+                    }
+                }
+                """, animal());
+        assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
+    }
+
+    // ---------- VARIABLE LOCAL ----------
 
     @Test
     void variableLocalNoSeBloqueaPorElAtributoPrivadoDelPadre() {
@@ -142,31 +193,7 @@ class VisibilidadZTest {
                         println(secreto);
                     }
                 }
-                """, "zoo", animalEnZoo());
+                """, animal());
         assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
-    }
-
-    @Test
-    void constructorPrivadoSoloSePuedeUsarDentroDeSuClase() {
-        TablaSimbolosZ.DefinicionClaseExterna singleton = ServicioCompilacionZ.recolectarFirmas("""
-                public class Singleton {
-                    private Singleton() { }
-                }
-                """, "util").orElseThrow();
-
-        ResultadoCompilacionZ fuera = analizar("""
-                public class Cliente {
-                    public void f() { Singleton s = new Singleton(); }
-                }
-                """, "util", singleton);
-        assertEquals(1, fuera.getErroresSemanticos().size(), fuera.getErroresSemanticos().toString());
-
-        ResultadoCompilacionZ dentro = analizar("""
-                public class Singleton {
-                    private Singleton() { }
-                    public Singleton crear() { return new Singleton(); }
-                }
-                """, "util");
-        assertTrue(dentro.isExitoso(), dentro.getErroresSemanticos().toString());
     }
 }

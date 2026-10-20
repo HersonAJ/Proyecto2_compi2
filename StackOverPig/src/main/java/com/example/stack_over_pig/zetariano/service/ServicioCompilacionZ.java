@@ -80,8 +80,9 @@ public class ServicioCompilacionZ {
             );
         }
         CargadorClasesZ cargador = new CargadorClasesZ(carpetaRaiz);
-        Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas = cargador.cargarAncestros(archivo, Map.of());
-        return analizar(contenido, externas, cargador.paqueteDe(archivo));
+        Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas =
+                cargador.cargarTodasLasClases(archivo);
+        return analizar(contenido, externas, "");
     }
 
     /** Igual que arriba, tomando como raiz la carpeta del propio archivo (paquete ""). */

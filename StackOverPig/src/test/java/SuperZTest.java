@@ -11,8 +11,11 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Paso 6b: super(...) y super.m() en Zetariano.
  *
- * Cada prueba analiza una clase hija con su padre (y a veces el abuelo) como externas.
- * El paquete es "" salvo que la prueba diga otra cosa.
+ * Reglas de visibilidad del proyecto 2:
+ *   public     -> cualquier clase.
+ *   PAQUETE    -> cualquier clase (no hay paquetes).
+ *   protected  -> la clase declarante y sus subclases.
+ *   private    -> solo la clase declarante.
  */
 class SuperZTest {
 
@@ -20,21 +23,10 @@ class SuperZTest {
         return ServicioCompilacionZ.recolectarFirmas(codigo).orElseThrow();
     }
 
-    private TablaSimbolosZ.DefinicionClaseExterna firmas(String codigo, String paquete) {
-        return ServicioCompilacionZ.recolectarFirmas(codigo, paquete).orElseThrow();
-    }
-
     private ResultadoCompilacionZ analizar(String codigo, TablaSimbolosZ.DefinicionClaseExterna... externas) {
         Map<String, TablaSimbolosZ.DefinicionClaseExterna> mapa = new LinkedHashMap<>();
         for (TablaSimbolosZ.DefinicionClaseExterna e : externas) mapa.put(e.nombre(), e);
         return new ServicioCompilacionZ().analizar(codigo, mapa);
-    }
-
-    private ResultadoCompilacionZ analizar(String codigo, String paquete,
-                                           TablaSimbolosZ.DefinicionClaseExterna... externas) {
-        Map<String, TablaSimbolosZ.DefinicionClaseExterna> mapa = new LinkedHashMap<>();
-        for (TablaSimbolosZ.DefinicionClaseExterna e : externas) mapa.put(e.nombre(), e);
-        return new ServicioCompilacionZ().analizar(codigo, mapa, paquete);
     }
 
     private void assertErrores(int esperados, ResultadoCompilacionZ r) {
@@ -117,25 +109,14 @@ class SuperZTest {
     }
 
     @Test
-    void superAConstructorDePaqueteEnElMismoPaqueteEsValido() {
+    void superAConstructorSinModificadorEsValidoDesdeCualquierClase() {
+        // Sin paquetes, un constructor sin modificador (PAQUETE) es accesible desde cualquier subclase.
         ResultadoCompilacionZ r = analizar("""
                 public class Perro extends Animal {
                     public Perro() { super(); }
                 }
-                """, "zoo",
-                firmas("public class Animal { Animal() { } }", "zoo"));
+                """, firmas("public class Animal { Animal() { } }"));
         assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
-    }
-
-    @Test
-    void superAConstructorDePaqueteEnOtroPaqueteEsError() {
-        ResultadoCompilacionZ r = analizar("""
-                public class Perro extends Animal {
-                    public Perro() { super(); }
-                }
-                """, "casa",
-                firmas("public class Animal { Animal() { } }", "zoo"));
-        assertErrores(1, r);
     }
 
     @Test
