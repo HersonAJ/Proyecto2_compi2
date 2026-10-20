@@ -34,9 +34,9 @@ public class ControlAccesoZ {
         String actual = tabla.getNombreClase();
         return switch (visibilidad) {
             case PUBLICO -> true;
+            case PAQUETE -> true;      // sin paquetes: cualquier clase del proyecto
+            case PROTEGIDO -> claseDeclarante.equals(actual) || tabla.esSubtipo(actual, claseDeclarante);
             case PRIVADO -> claseDeclarante.equals(actual);
-            case PAQUETE -> mismoPaquete(claseDeclarante);
-            case PROTEGIDO -> mismoPaquete(claseDeclarante) || tabla.esSubtipo(actual, claseDeclarante);
         };
     }
 
@@ -53,11 +53,11 @@ public class ControlAccesoZ {
                         + "' y no se puede usar desde '" + tabla.getNombreClase() + "'"));
         return false;
     }
-
+/*
     private boolean mismoPaquete(String clase) {
         return tabla.paqueteDe(clase).equals(tabla.getPaqueteActual());
     }
-
+*/
     private String descripcion(Visibilidad visibilidad) {
         return switch (visibilidad) {
             case PUBLICO -> "public";

@@ -41,7 +41,6 @@ public class ValidadorSemanticoZ {
 
     public List<ErrorSemantico> analizar(NodoPrograma programa, Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas,
                                          String paquete) {
-        tabla.setPaqueteActual(paquete);
 
         // Registrar clases externas ANTES que todoo
         if (externas != null) {

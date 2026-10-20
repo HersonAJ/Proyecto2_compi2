@@ -62,9 +62,6 @@ public class TablaSimbolosZ {
     //herencia: sabe la superclase de la clase actual y la de las clases externas
     private final JerarquiaClases jerarquia = new JerarquiaClases(this::superclaseDe);
 
-    //paquete (carpeta) del archivo que se esta analizando; "" si esta en la raiz
-    private String paqueteActual = "";
-
     public TablaSimbolosZ() {
         pila.push(new Scope("global"));
     }
@@ -88,20 +85,6 @@ public class TablaSimbolosZ {
 
     public Visibilidad getVisibilidadClase() {
         return visibilidadClase;
-    }
-
-    public void setPaqueteActual(String paquete) {
-        this.paqueteActual = paquete == null ? "" : paquete;
-    }
-
-    public String getPaqueteActual() {
-        return paqueteActual;
-    }
-
-    /** Paquete de una clase (la actual o una externa); "" si no se conoce. */
-    public String paqueteDe(String clase) {
-        if (clase.equals(nombreClase)) return paqueteActual;
-        return buscarClaseExterna(clase).map(DefinicionClaseExterna::paquete).orElse("");
     }
 
     // ATRIBUTOS

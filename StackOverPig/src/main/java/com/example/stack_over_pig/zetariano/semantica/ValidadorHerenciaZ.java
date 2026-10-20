@@ -95,11 +95,11 @@ public class ValidadorHerenciaZ {
                             + "' y debe llevar @Override"));
         }
 
-        if (!Objects.equals(padre.tipoRetorno(), m.tipoRetorno())) {
+        if (!retornoCompatible(m.tipoRetorno(), padre.tipoRetorno())) {
             errores.add(new ErrorSemantico(m.linea(), m.columna(), "Sobrescritura invalida",
                     "El metodo '" + m.nombre() + "' retorna '" + nombreTipo(m.tipoRetorno())
                             + "' pero el de '" + padre.claseDeclarante() + "' retorna '"
-                            + nombreTipo(padre.tipoRetorno()) + "'"));
+                            + nombreTipo(padre.tipoRetorno()) + "' y debe ser el mismo tipo o un subtipo"));
         }
 
         if (rango(m.visibilidad()) < rango(padre.visibilidad())) {
@@ -205,10 +205,21 @@ public class ValidadorHerenciaZ {
 
     private boolean esVisibleDesdeLaSubclase(Visibilidad v, String padre, String subclase) {
         return switch (v) {
-            case PUBLICO, PROTEGIDO -> true;
-            case PAQUETE -> tabla.paqueteDe(padre).equals(tabla.paqueteDe(subclase));
+            case PUBLICO -> true;
+            case PAQUETE -> true;      // sin paquetes: cualquier clase del proyecto
+            case PROTEGIDO -> true;    // esta en una subclase
             case PRIVADO -> false;
         };
+    }
+
+    /** El retorno del hijo debe ser igual al del padre o un subtipo. null = void. */
+    private boolean retornoCompatible(String tipoHijo, String tipoPadre) {
+        if (tipoHijo == null && tipoPadre == null) return true;
+        if (tipoHijo == null || tipoPadre == null) return false;
+        if (tipoHijo.equals(tipoPadre)) return true;
+        // Covarianza solo aplica a tipos de clase.
+        if (!tabla.esClaseConocida(tipoHijo) || !tabla.esClaseConocida(tipoPadre)) return false;
+        return tabla.esSubtipo(tipoHijo, tipoPadre);
     }
 
     /** Tipo de una expresión como string para comparar con parámetros (sin validar). */
@@ -236,7 +247,7 @@ public class ValidadorHerenciaZ {
         return switch (v) {
             case PUBLICO -> "public";
             case PROTEGIDO -> "protected";
-            case PAQUETE -> "de paquete (sin modificador)";
+            case PAQUETE -> "sin modificador";
             case PRIVADO -> "private";
         };
     }
