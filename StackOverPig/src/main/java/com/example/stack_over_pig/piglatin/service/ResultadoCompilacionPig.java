@@ -15,29 +15,26 @@ public class ResultadoCompilacionPig {
     private final List<ErrorSemantico> erroresSemanticos;
     private final List<String> mensajesInternos;
 
-    // cdigo C generado y resultado de gcc
-    private final String codigoCGenerado;
-    private final boolean compilacionCExitosa;
-    private final String rutaEjecutable;
+    // RISC-V generado y salida de su ejecución en Venus
+    private final String codigoRiscV;
+    private final String salidaEjecucionRiscV;
 
     public ResultadoCompilacionPig(boolean exitoso,
                                    NodoPrograma programa,
-                                   List<ErrorPosicional> erroresLexico,
+                                   List<ErrorPosicional> erroresLexicos,
                                    List<ErrorPosicional> erroresSintacticos,
                                    List<ErrorSemantico> erroresSemanticos,
-                                   List<String> mensajesInterno,
-                                   String codigoCGenerado,
-                                   boolean compilacionCExitosa,
-                                   String rutaEjecutable) {
+                                   List<String> mensajesInternos,
+                                   String codigoRiscV,
+                                   String salidaEjecucionRiscV) {
         this.exitoso = exitoso;
         this.programa = programa;
-        this.erroresLexicos = erroresLexico;
+        this.erroresLexicos = erroresLexicos;
         this.erroresSintacticos = erroresSintacticos;
         this.erroresSemanticos = erroresSemanticos;
-        this.mensajesInternos = mensajesInterno;
-        this.codigoCGenerado = codigoCGenerado;
-        this.compilacionCExitosa = compilacionCExitosa;
-        this.rutaEjecutable = rutaEjecutable;
+        this.mensajesInternos = mensajesInternos;
+        this.codigoRiscV = codigoRiscV;
+        this.salidaEjecucionRiscV = salidaEjecucionRiscV;
     }
 
     public boolean isExitoso() { return exitoso; }
@@ -47,9 +44,8 @@ public class ResultadoCompilacionPig {
     public List<ErrorSemantico> getErroresSemanticos() { return erroresSemanticos; }
     public List<String> getMensajesInternos() { return mensajesInternos; }
 
-    public String getCodigoCGenerado() { return codigoCGenerado; }
-    public boolean isCompilacionCExitosa() { return compilacionCExitosa; }
-    public String getRutaEjecutable() { return rutaEjecutable; }
+    public String getCodigoRiscV() { return codigoRiscV; }
+    public String getSalidaEjecucionRiscV() { return salidaEjecucionRiscV; }
 
     public boolean hayErrores() {
         return !erroresLexicos.isEmpty()

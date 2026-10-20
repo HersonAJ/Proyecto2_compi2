@@ -1,12 +1,13 @@
 package com.example.stack_over_pig.piglatin.service;
 
-import com.example.stack_over_pig.c3d_v2.c.EstructuraC;
-import com.example.stack_over_pig.c3d_v2.c.GeneradorArchivoC;
-import com.example.stack_over_pig.c3d_v2.c.GeneradorC;
+import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.Cuarteta;
+import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.GestorCodigoIntermedio;
 import com.example.stack_over_pig.piglatin.builder.ASTBuilderPig;
 import com.example.stack_over_pig.piglatin.nodo.NodoAST;
 import com.example.stack_over_pig.piglatin.nodo.NodoPrograma;
 import com.example.stack_over_pig.piglatin.semantica.ValidadorSemanticoPig;
+import com.example.stack_over_pig.riscv.EmisorRiscV;
+import com.example.stack_over_pig.riscv.piglatin.GeneradorCuartetasPig;
 import com.example.stack_over_pig.y.errores.ErrorPosicional;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 import com.example.piglatin.analizador.gramatica.PigLexer;
@@ -21,14 +22,14 @@ public class ServicioCompilacionPig {
 
     private ValidadorSemanticoPig ultimoValidador;
 
-    // ANALIZAR (sin generar C)
+    // ANALIZAR (sin generar RISC-V)
     public ResultadoCompilacionPig analizar(String codigoFuente, Path carpetaRaiz) {
         if (codigoFuente == null || codigoFuente.trim().isEmpty()) {
             return new ResultadoCompilacionPig(
                     false, null,
                     List.of(), List.of(), List.of(),
                     List.of("El código está vacío"),
-                    null, false, null
+                    null, null
             );
         }
 
@@ -39,85 +40,58 @@ public class ServicioCompilacionPig {
                     false, null,
                     List.of(), List.of(), List.of(),
                     List.of("Estructura demasiado profunda o inválida."),
-                    null, false, null
+                    null, null
             );
         } catch (Exception e) {
             return new ResultadoCompilacionPig(
                     false, null,
                     List.of(), List.of(), List.of(),
                     List.of("Error interno inesperado: " + e.getMessage()),
-                    null, false, null
+                    null, null
             );
         }
     }
 
-    // COMPILAR (analizar + generar C + gcc)
-    public ResultadoCompilacionPig compilar(String codigoFuente,
-                                            Path carpetaRaiz,
-                                            Path rutaDestinoC) {
+    // COMPILAR A RISC-V (analizar + generar cuartetas + emitir assembler)
+    public ResultadoCompilacionPig compilarRiscV(String codigoFuente, Path carpetaRaiz) {
         ResultadoCompilacionPig resultado = analizar(codigoFuente, carpetaRaiz);
 
         if (!resultado.isExitoso()) {
             return resultado;
         }
 
-        ValidadorSemanticoPig validador = ultimoValidador;
-        if (validador == null) {
-            return new ResultadoCompilacionPig(
-                    false, resultado.getPrograma(),
-                    List.of(), List.of(),
-                    List.of(new ErrorSemantico(-1, -1, "Compilación C",
-                            "No se pudo recuperar el validador semántico.")),
-                    List.of(),
-                    null, false, null
-            );
-        }
-
-        String codigoC;
-        boolean compilacionOk = false;
-        String rutaExe = null;
-        List<ErrorSemantico> errores = new ArrayList<>(resultado.getErroresSemanticos());
-
         try {
-            codigoC = generarCodigoC(resultado.getPrograma(), validador);
+            GestorCodigoIntermedio gestor = new GestorCodigoIntermedio();
+            GeneradorCuartetasPig generador = new GeneradorCuartetasPig(gestor);
+            resultado.getPrograma().aceptar(generador);
 
-            // Ruta del ejecutable: mismo nombre que el .c, sin extensión.
-            String nombreSinExt = rutaDestinoC.getFileName().toString();
-            int punto = nombreSinExt.lastIndexOf('.');
-            if (punto > 0) nombreSinExt = nombreSinExt.substring(0, punto);
-            Path rutaExePath = rutaDestinoC.getParent().resolve(nombreSinExt);
+            List<Cuarteta> cuartetas = gestor.getCuartetas();
 
-            GeneradorArchivoC gen = new GeneradorArchivoC();
-            compilacionOk = gen.generarYCompilar(codigoC, rutaDestinoC, rutaExePath);
+            EmisorRiscV emisor = new EmisorRiscV();
+            String codigoRiscV = emisor.emitir(cuartetas);
 
-            if (compilacionOk) {
-                rutaExe = rutaExePath.toAbsolutePath().toString();
-            }
+            return new ResultadoCompilacionPig(
+                    true,
+                    resultado.getPrograma(),
+                    resultado.getErroresLexicos(),
+                    resultado.getErroresSintacticos(),
+                    resultado.getErroresSemanticos(),
+                    resultado.getMensajesInternos(),
+                    codigoRiscV,
+                    null
+            );
         } catch (Exception e) {
-            errores.add(new ErrorSemantico(-1, -1, "Generación C",
-                    "Error al generar/compilar: " + e.getMessage()));
             return new ResultadoCompilacionPig(
                     false,
                     resultado.getPrograma(),
                     resultado.getErroresLexicos(),
                     resultado.getErroresSintacticos(),
-                    errores,
+                    List.of(new ErrorSemantico(-1, -1, "RISC-V",
+                            "Error al generar RISC-V: " + e.getMessage())),
                     resultado.getMensajesInternos(),
-                    null, false, null
+                    null, null
             );
         }
-
-        return new ResultadoCompilacionPig(
-                true,
-                resultado.getPrograma(),
-                resultado.getErroresLexicos(),
-                resultado.getErroresSintacticos(),
-                errores,
-                resultado.getMensajesInternos(),
-                codigoC,
-                compilacionOk,
-                rutaExe
-        );
     }
 
     // IMPLEMENTACIÓN INTERNA
@@ -144,7 +118,7 @@ public class ServicioCompilacionPig {
             return new ResultadoCompilacionPig(
                     false, null,
                     erroresLexicos, List.of(), List.of(), List.of(),
-                    null, false, null
+                    null, null
             );
         }
 
@@ -175,7 +149,7 @@ public class ServicioCompilacionPig {
             return new ResultadoCompilacionPig(
                     false, null,
                     List.of(), erroresSintacticos, List.of(), List.of(),
-                    null, false, null
+                    null, null
             );
         }
 
@@ -190,7 +164,7 @@ public class ServicioCompilacionPig {
                     false, null,
                     List.of(), List.of(), List.of(),
                     List.of("Error al construir el AST: " + e.getMessage()),
-                    null, false, null
+                    null, null
             );
         }
 
@@ -199,7 +173,7 @@ public class ServicioCompilacionPig {
                     false, null,
                     List.of(), List.of(), List.of(),
                     List.of("El AST resultante es nulo"),
-                    null, false, null
+                    null, null
             );
         }
 
@@ -214,7 +188,7 @@ public class ServicioCompilacionPig {
                     false, programa,
                     List.of(), List.of(), List.of(),
                     List.of("Error en validación semántica: " + e.getMessage()),
-                    null, false, null
+                    null, null
             );
         }
 
@@ -228,32 +202,7 @@ public class ServicioCompilacionPig {
                 erroresSemanticos,
                 List.of(),
                 null,
-                false,
                 null
         );
-    }
-
-    // GENERACION DE C
-    private String generarCodigoC(NodoPrograma programa, ValidadorSemanticoPig validador) {
-        var importaciones = validador.getImportaciones();
-        var funcionesImportadas = importaciones.getFuncionesImportadas();
-        var estructurasImportadas = importaciones.getEstructurasImportadas();
-
-        var tabla = validador.getTabla();
-
-        //var variablesGlobales = programa.aVariablesGlobalesC(tabla);
-        //var mainC = programa.aMainC(tabla);
-
-        var funciones = new ArrayList<>(funcionesImportadas);
-        //funciones.add(mainC);
-
-        var estructuras = new ArrayList<EstructuraC>();
-        var nombresVistos = new java.util.HashSet<String>();
-        for (var e : estructurasImportadas) {
-            if (nombresVistos.add(e.getNombre())) {
-                estructuras.add(e);
-            }
-        }
-        return new GeneradorC().generar(funciones, estructuras, null, false);
     }
 }

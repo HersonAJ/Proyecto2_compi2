@@ -392,6 +392,7 @@ public class VentanaPrincipal {
     // COMPILAR
 
     private void accionCompilar() {
+        /*
         Optional<EditorCodigo> editorOpt = panelEditores.editorActivo();
         if (editorOpt.isEmpty()) {
             panelSalida.agregarError("UI", -1, -1, "No hay pestaña activa.");
@@ -468,6 +469,7 @@ public class VentanaPrincipal {
                     + panelSalida.totalErrores() + " error(es).");
             panelSalida.enfocarErrores();
         }
+        */
     }
 
     private Path pedirRutaDestinoC(EditorCodigo editor) {
