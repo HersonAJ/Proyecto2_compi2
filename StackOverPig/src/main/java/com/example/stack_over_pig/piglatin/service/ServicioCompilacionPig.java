@@ -69,7 +69,7 @@ public class ServicioCompilacionPig {
 
             List<Cuarteta> cuartetas = gestor.getCuartetas();
 
-            EmisorRiscV emisor = new EmisorRiscV();
+            EmisorRiscV emisor = new EmisorRiscV(tabla);
             String codigoRiscV = emisor.emitir(cuartetas);
 
             return new ResultadoCompilacionPig(

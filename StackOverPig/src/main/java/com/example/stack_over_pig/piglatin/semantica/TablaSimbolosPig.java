@@ -14,8 +14,9 @@ public class TablaSimbolosPig {
     public record Parametro(String nombre, String tipo, int dimensiones) {}
 
     //una variable local o global
-    public record SimboloVariable(String nombre, String tipo, int dimensiones, Integer tamanoConocido,
-                                  boolean esEstructura, boolean esObjeto, String tipoOriginal) {}
+    public record SimboloVariable(String nombre, String tipo, int dimensiones,
+                                  Integer tamanoConocido, boolean esEstructura,
+                                  boolean esObjeto, String tipoOriginal, int offset) {}
 
     //definicion de una estructura importada .y (dimensiones: 0 = escalar, 1 = arreglo)
     public record DefinicionEstructura(String nombre, Map<String, String> atributos,
@@ -71,6 +72,8 @@ public class TablaSimbolosPig {
 
     private final List<EntradaSimbolo> registro = new ArrayList<>();
     private int siguienteId = 1;
+    private int siguienteOffset =16;
+    private final Map<String, Integer> offsetsTemporales = new LinkedHashMap<>();
 
     public TablaSimbolosPig() {
         pila.push(new Scope("global"));
@@ -101,24 +104,6 @@ public class TablaSimbolosPig {
     }
 
     // variable
-    public boolean declararVariable(String nombre, String tipo, int dimensiones,
-                                    Integer tamano, boolean esEstructura,
-                                    boolean esObjeto, String tipoOriginal) {
-        Scope actual = pila.peek();
-        if (actual.variables.containsKey(nombre)) {
-            return false;
-        }
-
-        SimboloVariable v = new SimboloVariable(nombre, tipo, dimensiones, tamano, esEstructura, esObjeto, tipoOriginal);
-        actual.variables.put(nombre, v);
-
-        Categoria cat = esObjeto ? Categoria.OBJETO_VAR :
-                esEstructura ? Categoria.ESTRUCTURA_VAR :
-                        (dimensiones > 0 ? Categoria.ARREGLO : Categoria.VARIABLE);
-
-        registro.add(new EntradaSimbolo(siguienteId++, nombre, cat, tipo,0, ambitoActual(), alcanceActual()));
-        return true;
-    }
 
     public Optional<SimboloVariable> buscarVariable(String nombre) {
         for (Scope scope : pila) {
@@ -204,5 +189,70 @@ public class TablaSimbolosPig {
     // Devuelve true si el nombre ya está en uso por una estructura o una clase
     public boolean nombreEnUso(String nombre) {
         return estructuras.containsKey(nombre) || clases.containsKey(nombre);
+    }
+
+    // OFFSETS DE MEMORIA
+
+    /** Asigna un offset (fp-relativo) a una variable escalar y lo devuelve. */
+    public int asignarOffsetVariable(String nombre) {
+        int offset = -siguienteOffset;
+        siguienteOffset += 8; // RV64: 8 bytes por slot
+        return offset;
+    }
+
+    /** Asigna un offset (fp-relativo) a un arreglo de 'tamano' elementos. */
+    public int asignarOffsetVariableConTamano(String nombre, int tamano) {
+        int offset = -siguienteOffset;
+        siguienteOffset += 8 * tamano; // RV64: 8 bytes por elemento
+        return offset;
+    }
+
+    /** Asigna un offset (fp-relativo) a un temporal. */
+    public int asignarOffsetTemporal(int idTemporal) {
+        String key = "t" + idTemporal;
+        Integer existente = offsetsTemporales.get(key);
+        if (existente != null) return existente;
+        int offset = -siguienteOffset;
+        siguienteOffset += 8;
+        offsetsTemporales.put(key, offset);
+        return offset;
+    }
+
+    /** Tamaño total del marco (antes de redondear a múltiplo de 16). */
+    public int getSiguienteOffset() {
+        return siguienteOffset;
+    }
+
+    public boolean declararVariable(String nombre, String tipo, int dimensiones,
+                                    Integer tamano, boolean esEstructura,
+                                    boolean esObjeto, String tipoOriginal) {
+        return declararVariable(nombre, tipo, dimensiones, tamano, esEstructura,
+                esObjeto, tipoOriginal, 0);
+    }
+
+    public boolean declararVariable(String nombre, String tipo, int dimensiones,
+                                    Integer tamano, boolean esEstructura,
+                                    boolean esObjeto, String tipoOriginal, int offset) {
+        Scope actual = pila.peek();
+        if (actual.variables.containsKey(nombre)) {
+            return false;
+        }
+
+        SimboloVariable v = new SimboloVariable(nombre, tipo, dimensiones, tamano,
+                esEstructura, esObjeto, tipoOriginal, offset);
+        actual.variables.put(nombre, v);
+
+        Categoria cat = esObjeto ? Categoria.OBJETO_VAR :
+                esEstructura ? Categoria.ESTRUCTURA_VAR :
+                        (dimensiones > 0 ? Categoria.ARREGLO : Categoria.VARIABLE);
+
+        registro.add(new EntradaSimbolo(siguienteId++, nombre, cat, tipo, 0,
+                ambitoActual(), alcanceActual()));
+        return true;
+    }
+
+    public int getOffsetTemporal(int idTemporal) {
+        Integer offset = offsetsTemporales.get("t" + idTemporal);
+        return offset != null ? offset : 0;
     }
 }

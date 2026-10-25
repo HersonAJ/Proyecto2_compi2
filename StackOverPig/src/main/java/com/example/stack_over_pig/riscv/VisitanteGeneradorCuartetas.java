@@ -27,4 +27,6 @@ public interface VisitanteGeneradorCuartetas {
     void visitar(NodoExpr.Binaria b);
     void visitar(NodoExpr.Unaria u);
     void visitar(NodoExpr.LlamadaFuncion l);
+    void visitar(NodoSentencia.DeclaracionArreglo d);
+    void visitar(NodoExpr.AccesoArray a);
 }

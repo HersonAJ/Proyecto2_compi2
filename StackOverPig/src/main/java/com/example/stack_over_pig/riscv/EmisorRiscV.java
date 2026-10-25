@@ -1,34 +1,35 @@
 package com.example.stack_over_pig.riscv;
 
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.AsignacionArreglo;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Continuar1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Romper1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.*;
+import com.example.stack_over_pig.piglatin.semantica.TablaSimbolosPig;
 
 import java.util.*;
 
 /**
- * Recorre las cuartetas y emite ensamblador RISC-V (RV32IM) para Venus.
- * Usa fp (s0) para offsets fijos. Calcula FRAMESIZE al recorrer las cuartetas.
- *
- * Los registros t0-t6 se usan como pool ciclado: cada cuarteta pide
- * registros frescos al pool para cargar operandos y calcular resultados.
- * Los temporales del C3D viven en pila (offsets desde fp).
+ * Recorre las cuartetas y emite ensamblador RISC-V (RV64).
+ * Los offsets de variables y temporales los asigna el GeneradorCuartetasPig
+ * en la TablaSimbolosPig. El emisor los consulta para generar ld/sd.
+ * Los registros t0-t6 se usan como pool ciclado.
  */
 public class EmisorRiscV {
 
     private final StringBuilder data = new StringBuilder();
     private final StringBuilder text = new StringBuilder();
 
-    private final Map<String, Integer> offsets = new LinkedHashMap<>();
-    private final Map<String, String> tipos = new LinkedHashMap<>();
-    private int siguienteOffset = 8; // 0(fp) y -4(fp) reservados para s0 y ra
-    private int contadorStrings = 0;
-    private int contadorFloats = 0;
+    private final TablaSimbolosPig tabla;
 
-    // Pool de registros temporales (t0-t6)
+    private int contadorStrings = 0;
+
     private int siguienteRegistroTemporal = 0;
     private static final int NUM_TEMPORALES = 7;
+
+    public EmisorRiscV(TablaSimbolosPig tabla) {
+        this.tabla = tabla;
+    }
 
     private String nuevoRegistroTemporal() {
         String reg = "t" + (siguienteRegistroTemporal % NUM_TEMPORALES);
@@ -37,39 +38,28 @@ public class EmisorRiscV {
     }
 
     public String emitir(List<Cuarteta> cuartetas) {
-        // 1. Primera pasada: asignar offsets a variables y temporales
-        for (Cuarteta c : cuartetas) {
-            asignarOffsets(c);
-        }
+        // El framesize lo calcula la tabla (ya tiene todos los offsets asignados)
+        int framesize = tabla.getSiguienteOffset();
+        framesize = ((framesize + 15) / 16) * 16;
 
-        // 2. Calcular FRAMESIZE
-        int framesize = siguienteOffset;
-        framesize = ((framesize + 15) / 16) * 16; // múltiplo de 16
-
-        // 3. Emitir cabecera
         text.append(".text\n");
         text.append(".globl main\n");
         text.append("main:\n");
-
-        // 4. Prólogo
         text.append("    addi sp, sp, -").append(framesize).append("\n");
-        text.append("    sw   s0, ").append(framesize - 4).append("(sp)\n");
-        text.append("    sw   ra, ").append(framesize - 8).append("(sp)\n");
-        text.append("    addi s0, sp, ").append(framesize - 4).append("\n\n");
+        text.append("    sd   s0, ").append(framesize - 8).append("(sp)\n");
+        text.append("    sd   ra, ").append(framesize - 16).append("(sp)\n");
+        text.append("    addi s0, sp, ").append(framesize - 8).append("\n\n");
 
-        // 5. Segunda pasada: emitir cuartetas
         for (Cuarteta c : cuartetas) {
             emitirCuarteta(c);
         }
 
-        // 6. Epílogo
-        text.append("\n    lw   ra, -4(s0)\n");
-        text.append("    lw   s0, 0(s0)\n");
+        text.append("\n    ld   ra, -8(s0)\n");
+        text.append("    ld   s0, 0(s0)\n");
         text.append("    addi sp, sp, ").append(framesize).append("\n");
         text.append("    li   a7, 10\n");
         text.append("    ecall\n");
 
-        // 7. Unir .data y .text
         StringBuilder resultado = new StringBuilder();
         if (data.length() > 0) {
             resultado.append(".data\n").append(data).append("\n");
@@ -78,60 +68,11 @@ public class EmisorRiscV {
         return resultado.toString();
     }
 
-    // ========== ASIGNACIÓN DE OFFSETS ==========
-
-    private void asignarOffsets(Cuarteta c) {
-        if (c instanceof AsignacionVariable a) {
-            asignarAcceso(a.getDestino());
-            asignarAcceso(a.getValor());
-        } else if (c instanceof OperacionBinaria o) {
-            asignarAcceso(o.getDestino());
-            asignarAcceso(o.getIzquierda());
-            asignarAcceso(o.getDerecha());
-        } else if (c instanceof OperacionUnaria o) {
-            asignarAcceso(o.getDestino());
-            asignarAcceso(o.getOperando());
-        } else if (c instanceof Condicional1 cond) {
-            asignarAcceso(cond.getIzquierda());
-            asignarAcceso(cond.getDerecha());
-        } else if (c instanceof Llamada l) {
-            if (l.getDestino() != null) asignarAcceso(l.getDestino());
-            for (AccesoMemoria a : l.getArgumentos()) asignarAcceso(a);
-        } else if (c instanceof Retorno1 r) {
-            if (r.getValor() != null) asignarAcceso(r.getValor());
-        } else if (c instanceof ImprimirPig i) {
-            asignarAcceso(i.getValor());
-        } else if (c instanceof LeerPig l) {
-            asignarAcceso(l.getDestino());
-        } else if (c instanceof ConversionTipo ct) {
-            asignarAcceso(ct.getDestino());
-            asignarAcceso(ct.getFuente());
-        }
-    }
-
-    private void asignarAcceso(AccesoMemoria acc) {
-        if (acc instanceof AccesoVariable v) {
-            offsets.computeIfAbsent(v.getNombre(), k -> {
-                int off = -siguienteOffset;
-                siguienteOffset += 4;
-                tipos.put(k, v.getTipo());
-                return off;
-            });
-        } else if (acc instanceof AccesoTemporal t) {
-            String key = "t" + t.getNumero();
-            offsets.computeIfAbsent(key, k -> {
-                int off = -siguienteOffset;
-                siguienteOffset += 4;
-                tipos.put(k, t.getTipo());
-                return off;
-            });
-        }
-    }
-
     // ========== EMISIÓN DE CUARTETAS ==========
 
     private void emitirCuarteta(Cuarteta c) {
         if (c instanceof AsignacionVariable a) emitirAsignacion(a);
+        else if (c instanceof AsignacionArreglo a) emitirAsignacionArreglo(a);
         else if (c instanceof OperacionBinaria o) emitirOperacion(o);
         else if (c instanceof OperacionUnaria o) emitirUnaria(o);
         else if (c instanceof Condicional1 cond) emitirCondicional(cond);
@@ -149,7 +90,21 @@ public class EmisorRiscV {
         String dest = registrar(a.getDestino());
         String r = nuevoRegistroTemporal();
         cargar(a.getValor(), r);
-        text.append("    sw   ").append(r).append(", ").append(dest).append("\n");
+        text.append("    sd   ").append(r).append(", ").append(dest).append("\n");
+    }
+
+    private void emitirAsignacionArreglo(AsignacionArreglo a) {
+        String rBase = nuevoRegistroTemporal();
+        String rIndice = nuevoRegistroTemporal();
+        String rDir = nuevoRegistroTemporal();
+        String rValor = nuevoRegistroTemporal();
+
+        cargar(a.getBase(), rBase);
+        cargar(a.getIndice(), rIndice);
+        text.append("    slli ").append(rDir).append(", ").append(rIndice).append(", 2\n");
+        text.append("    add  ").append(rDir).append(", ").append(rBase).append(", ").append(rDir).append("\n");
+        cargar(a.getValor(), rValor);
+        text.append("    sw   ").append(rValor).append(", 0(").append(rDir).append(")\n");
     }
 
     private void emitirOperacion(OperacionBinaria o) {
@@ -186,7 +141,7 @@ public class EmisorRiscV {
         }
 
         String dest = registrar(o.getDestino());
-        text.append("    sw   ").append(rRes).append(", ").append(dest).append("\n");
+        text.append("    sd   ").append(rRes).append(", ").append(dest).append("\n");
     }
 
     private void emitirUnaria(OperacionUnaria o) {
@@ -201,7 +156,7 @@ public class EmisorRiscV {
         }
 
         String dest = registrar(o.getDestino());
-        text.append("    sw   ").append(rRes).append(", ").append(dest).append("\n");
+        text.append("    sd   ").append(rRes).append(", ").append(dest).append("\n");
     }
 
     private void emitirCondicional(Condicional1 c) {
@@ -244,7 +199,7 @@ public class EmisorRiscV {
         text.append("    jal  ra, ").append(l.getNombreFuncion()).append("\n");
         if (l.getDestino() != null) {
             String dest = registrar(l.getDestino());
-            text.append("    sw   a0, ").append(dest).append("\n");
+            text.append("    sd   a0, ").append(dest).append("\n");
         }
     }
 
@@ -256,8 +211,8 @@ public class EmisorRiscV {
                 text.append("    mv   a0, ").append(reg).append("\n");
             }
         }
-        text.append("    lw   ra, -4(s0)\n");
-        text.append("    lw   s0, 0(s0)\n");
+        text.append("    ld   ra, -8(s0)\n");
+        text.append("    ld   s0, 0(s0)\n");
         text.append("    ret\n");
     }
 
@@ -265,15 +220,8 @@ public class EmisorRiscV {
         String r = nuevoRegistroTemporal();
         cargar(c.getFuente(), r);
         String dest = registrar(c.getDestino());
-        if ("float".equals(c.getTipoC())) {
-            text.append("    fcvt.s.w ft0, ").append(r).append("\n");
-            text.append("    fsw  ft0, ").append(dest).append("\n");
-        } else if ("int".equals(c.getTipoC())) {
-            text.append("    fcvt.w.s ").append(r).append(", ft0\n");
-            text.append("    sw   ").append(r).append(", ").append(dest).append("\n");
-        } else {
-            text.append("    sw   ").append(r).append(", ").append(dest).append("\n");
-        }
+        // TODO: conversiones de punto flotante (RV64 con F/D). Por ahora solo enteros.
+        text.append("    sd   ").append(r).append(", ").append(dest).append("\n");
     }
 
     private void emitirImprimir(ImprimirPig i) {
@@ -304,7 +252,7 @@ public class EmisorRiscV {
         text.append("    li   a0, ").append(syscall).append("\n");
         text.append("    ecall\n");
         String dest = registrar(l.getDestino());
-        text.append("    sw   a0, ").append(dest).append("\n");
+        text.append("    sd   a0, ").append(dest).append("\n");
     }
 
     private void emitirSaltoSimple(Cuarteta c) {
@@ -317,11 +265,16 @@ public class EmisorRiscV {
 
     // ========== HELPERS ==========
 
+    /** Devuelve el offset (fp-relativo) de una variable o temporal, consultando la tabla. */
     private String registrar(AccesoMemoria acc) {
         if (acc instanceof AccesoVariable v) {
-            return offsets.get(v.getNombre()) + "(s0)";
+            int offset = tabla.buscarVariable(v.getNombre())
+                    .map(TablaSimbolosPig.SimboloVariable::offset)
+                    .orElse(0);
+            return offset + "(s0)";
         } else if (acc instanceof AccesoTemporal t) {
-            return offsets.get("t" + t.getNumero()) + "(s0)";
+            int offset = tabla.getOffsetTemporal(t.getNumero());
+            return offset + "(s0)";
         }
         return "0(s0)";
     }
@@ -339,18 +292,22 @@ public class EmisorRiscV {
             } else if ("littera".equals(tipo)) {
                 int ascii = valor instanceof Character c ? (int) c : Integer.parseInt(valor.toString());
                 text.append("    li   ").append(registro).append(", ").append(ascii).append("\n");
-            } else if ("decimalis".equals(tipo)) {
-                // Venus no soporta punto flotante (extension F).
-                throw new UnsupportedOperationException(
-                        "Venus no soporta 'decimalis' (punto flotante). "
-                                + "Usa solo numerus, bool, littera, textum en Fase 1.");
             } else if ("textum".equals(tipo)) {
                 String etiqueta = "str_" + contadorStrings++;
                 data.append("    ").append(etiqueta).append(": .asciiz \"").append(valor).append("\"\n");
                 text.append("    la   ").append(registro).append(", ").append(etiqueta).append("\n");
             }
+        } else if (acc instanceof AccesoArreglo arr) {
+            String rBase = nuevoRegistroTemporal();
+            String rIndice = nuevoRegistroTemporal();
+            String rDir = nuevoRegistroTemporal();
+            cargar(arr.getBase(), rBase);
+            cargar(arr.getIndice(), rIndice);
+            text.append("    slli ").append(rDir).append(", ").append(rIndice).append(", 2\n");
+            text.append("    add  ").append(rDir).append(", ").append(rBase).append(", ").append(rDir).append("\n");
+            text.append("    lw   ").append(registro).append(", 0(").append(rDir).append(")\n");
         } else if (acc instanceof AccesoVariable || acc instanceof AccesoTemporal) {
-            text.append("    lw   ").append(registro).append(", ").append(registrar(acc)).append("\n");
+            text.append("    ld   ").append(registro).append(", ").append(registrar(acc)).append("\n");
         }
     }
 }

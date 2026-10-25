@@ -17,6 +17,7 @@ import java.nio.file.*;
  * al final).
  */
 public class EjecutorVenus {
+    /*
 
     private static final String NOMBRE_JAR = "venus-jvm-latest.jar";
 
@@ -30,7 +31,7 @@ public class EjecutorVenus {
         this(null);
     }
 
-    /** Busca el JAR en varios sitios si la ruta indicada no existe. */
+    /** Busca el JAR en varios sitios si la ruta indicada no existe.
     private static Path resolverRutaVenus(Path indicada) {
         if (indicada != null && Files.isRegularFile(indicada)) return indicada;
 
@@ -89,4 +90,5 @@ public class EjecutorVenus {
     }
 
     public record ResultadoEjecucion(boolean exitoso, String salida) {}
+    */
 }

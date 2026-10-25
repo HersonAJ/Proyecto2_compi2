@@ -380,18 +380,6 @@ public class VentanaPrincipal {
         panelSalida.imprimirConsola("=== CÓDIGO RISC-V GENERADO ===");
         panelSalida.imprimirConsola(compilado.getCodigoRiscV());
 
-        // 3. Ejecutar en Venus
-        panelSalida.imprimirConsola("=== EJECUTANDO EN VENUS ===");
-        EjecutorVenus ejecutor = new EjecutorVenus();
-        EjecutorVenus.ResultadoEjecucion ejecucion = ejecutor.ejecutar(compilado.getCodigoRiscV());
-
-        if (ejecucion.exitoso()) {
-            panelSalida.imprimirConsola(ejecucion.salida());
-            panelSalida.imprimirConsola("=== EJECUCIÓN EXITOSA ===");
-        } else {
-            panelSalida.agregarError("Venus", -1, -1, ejecucion.salida());
-            panelSalida.enfocarErrores();
-        }
     }
 
     // Impresión de errores

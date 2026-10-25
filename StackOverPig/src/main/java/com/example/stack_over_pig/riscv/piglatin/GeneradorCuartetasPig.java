@@ -1,6 +1,7 @@
 package com.example.stack_over_pig.riscv.piglatin;
 
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.*;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.AsignacionArreglo;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Continuar1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Romper1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
@@ -13,10 +14,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Recorre el AST de Pig y emite cuartetas (C3D) para la Fase 1.
- * Soporta: variables primitivas, operaciones, condicionales, ciclos,
+ * Recorre el AST de Pig y emite cuartetas (C3D).
+ * Fase 1: variables primitivas, operaciones, condicionales, ciclos,
  * escritura/lectura, incremento/decremento.
- * No soporta: arreglos, structs, objetos, metodos.
+ * Fase 2: arreglos (declaracion, acceso, asignacion).
+ * No soporta aun: structs, objetos, metodos.
  */
 public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
 
@@ -41,16 +43,34 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
 
     @Override
     public void visitar(NodoSentencia.DeclaracionVariable d) {
+        int offset = tabla.asignarOffsetVariable(d.nombre());
+        tabla.declararVariable(d.nombre(), d.tipo(), 0, null, false, false, d.tipo(), offset);
+
         if (d.inicializacion() != null) {
             d.inicializacion().aceptar(this);
             AccesoMemoria valor = ultimoResultado;
             AccesoVariable destino = new AccesoVariable(d.nombre(), tipoAC(d.tipo()));
             gestor.emitir(new AsignacionVariable(destino, valor));
         } else {
-            // Declarar sin inicializar: emitir asignación de 0
             AccesoVariable destino = new AccesoVariable(d.nombre(), tipoAC(d.tipo()));
             AccesoMemoria cero = new Literal(0, "numerus");
             gestor.emitir(new AsignacionVariable(destino, cero));
+        }
+    }
+
+    @Override
+    public void visitar(NodoSentencia.DeclaracionArreglo d) {
+        int offset = tabla.asignarOffsetVariableConTamano(d.nombre(), d.tamano());
+        tabla.declararVariable(d.nombre(), d.tipo(), 1, d.tamano(), false, false, d.tipo(), offset);
+
+        if (d.inicializacion() != null && !d.inicializacion().isEmpty()) {
+            for (int i = 0; i < d.inicializacion().size(); i++) {
+                d.inicializacion().get(i).aceptar(this);
+                AccesoMemoria valor = ultimoResultado;
+                AccesoVariable base = new AccesoVariable(d.nombre(), tipoAC(d.tipo()));
+                AccesoMemoria indice = new Literal(i, "numerus");
+                gestor.emitir(new AsignacionArreglo(base, indice, valor));
+            }
         }
     }
 
@@ -60,7 +80,12 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         AccesoMemoria valor = ultimoResultado;
         a.destino().aceptar(this);
         AccesoMemoria destino = ultimoResultado;
-        gestor.emitir(new AsignacionVariable(destino, valor));
+
+        if (destino instanceof AccesoArreglo arr) {
+            gestor.emitir(new AsignacionArreglo(arr.getBase(), arr.getIndice(), valor));
+        } else {
+            gestor.emitir(new AsignacionVariable(destino, valor));
+        }
     }
 
     @Override
@@ -75,14 +100,12 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         gestor.emitir(new Condicional1(cond, "==", new Literal(0, "bool"), lNo));
         gestor.emitir(new Salto(lSi));
 
-        // Bloque si
         gestor.emitir(new DefinicionEtiqueta(lSi));
         for (NodoSentencia s : c.cuerpoSi()) {
             s.aceptar(this);
         }
         gestor.emitir(new Salto(lFin));
 
-        // Bloque aliter (siempre se emite la etiqueta lNo)
         gestor.emitir(new DefinicionEtiqueta(lNo));
         for (NodoSentencia.RamaAliter rama : c.ramasAliter()) {
             int lSiguiente = gestor.getContador().siguienteEtiqueta();
@@ -103,6 +126,7 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
 
         gestor.emitir(new DefinicionEtiqueta(lFin));
     }
+
     @Override
     public void visitar(NodoSentencia.CicloDum c) {
         int lInicio = gestor.getContador().siguienteEtiqueta();
@@ -149,7 +173,6 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
 
     @Override
     public void visitar(NodoSentencia.CicloPer c) {
-        // Inicialización
         if (c.inicializacion() != null) {
             c.inicializacion().aceptar(this);
         }
@@ -192,8 +215,11 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
     @Override
     public void visitar(NodoSentencia.Lectura l) {
         if (l.variable() == null) return;
-        AccesoVariable destino = new AccesoVariable(l.variable(), "numerus");
-        gestor.emitir(new LeerPig(destino, "numerus"));
+        String tipo = tabla.buscarVariable(l.variable())
+                .map(TablaSimbolosPig.SimboloVariable::tipo)
+                .orElse("numerus");
+        AccesoVariable destino = new AccesoVariable(l.variable(), tipoAC(tipo));
+        gestor.emitir(new LeerPig(destino, tipo));
     }
 
     @Override
@@ -258,7 +284,10 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
 
     @Override
     public void visitar(NodoExpr.Identificador i) {
-        ultimoResultado = new AccesoVariable(i.nombre(), "numerus");
+        String tipo = tabla.buscarVariable(i.nombre())
+                .map(TablaSimbolosPig.SimboloVariable::tipo)
+                .orElse("numerus");
+        ultimoResultado = new AccesoVariable(i.nombre(), tipoAC(tipo));
     }
 
     @Override
@@ -300,6 +329,24 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         ultimoResultado = t;
     }
 
+    @Override
+    public void visitar(NodoExpr.AccesoArray a) {
+        a.arreglo().aceptar(this);
+        AccesoMemoria base = ultimoResultado;
+
+        a.indice().aceptar(this);
+        AccesoMemoria indice = ultimoResultado;
+
+        String tipoElemento = "int";
+        if (a.arreglo() instanceof NodoExpr.Identificador id) {
+            tipoElemento = tipoAC(tabla.buscarVariable(id.nombre())
+                    .map(TablaSimbolosPig.SimboloVariable::tipo)
+                    .orElse("numerus"));
+        }
+
+        ultimoResultado = new AccesoArreglo(base, indice, tipoElemento);
+    }
+
     // ========== HELPERS ==========
 
     private String tipoAC(String tipoPig) {
@@ -320,7 +367,6 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         if (expr instanceof NodoExpr.LiteralCaracter) return "littera";
         if (expr instanceof NodoExpr.LiteralBool) return "bool";
         if (expr instanceof NodoExpr.Identificador id) {
-            // Consultar la tabla para obtener el tipo real
             return tabla.buscarVariable(id.nombre())
                     .map(TablaSimbolosPig.SimboloVariable::tipo)
                     .orElse("numerus");
