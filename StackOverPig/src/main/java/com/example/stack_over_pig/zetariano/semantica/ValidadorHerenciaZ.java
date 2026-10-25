@@ -206,8 +206,8 @@ public class ValidadorHerenciaZ {
     private boolean esVisibleDesdeLaSubclase(Visibilidad v, String padre, String subclase) {
         return switch (v) {
             case PUBLICO -> true;
-            case PAQUETE -> true;      // sin paquetes: cualquier clase del proyecto
-            case PROTEGIDO -> true;    // esta en una subclase
+            case PAQUETE -> false;   // como private: no visible desde subclase
+            case PROTEGIDO -> true;  // estamos en una subclase
             case PRIVADO -> false;
         };
     }
@@ -238,8 +238,7 @@ public class ValidadorHerenciaZ {
         return switch (v) {
             case PUBLICO -> 3;
             case PROTEGIDO -> 2;
-            case PAQUETE -> 1;
-            case PRIVADO -> 0;
+            case PAQUETE, PRIVADO -> 1;
         };
     }
 
@@ -247,7 +246,7 @@ public class ValidadorHerenciaZ {
         return switch (v) {
             case PUBLICO -> "public";
             case PROTEGIDO -> "protected";
-            case PAQUETE -> "sin modificador";
+            case PAQUETE -> "sin modificador (privado)";
             case PRIVADO -> "private";
         };
     }

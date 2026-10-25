@@ -9,9 +9,9 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Reglas de visibilidad con la definicion del proyecto 2:
+ * Reglas de visibilidad del proyecto 2:
  *   public     -> cualquier clase.
- *   PAQUETE    -> cualquier clase (no hay paquetes).
+ *   PAQUETE    -> como private: solo la clase declarante.
  *   protected  -> la clase declarante y sus subclases.
  *   private    -> solo la clase declarante.
  */
@@ -48,12 +48,12 @@ class VisibilidadZTest {
     // ---------- HIJA ----------
 
     @Test
-    void hijaVeTodoMenosLoPrivado() {
+    void hijaVePublicYProtegidoPeroNoDefaultNiPrivado() {
         ResultadoCompilacionZ r = analizar("""
                 public class Perro extends Animal {
                     public void f() {
-                        println(raza); println(nombre); println(publico);
-                        proteger(); interno(); abierto();
+                        println(raza); println(publico);
+                        proteger(); abierto();
                     }
                 }
                 """, animal());
@@ -61,26 +61,28 @@ class VisibilidadZTest {
     }
 
     @Test
-    void hijaNoVeLoPrivado() {
+    void hijaNoVeDefaultNiPrivado() {
         ResultadoCompilacionZ r = analizar("""
                 public class Perro extends Animal {
                     public void f() {
-                        println(secreto);
-                        ocultar();
+                        println(nombre);      // default: error
+                        println(secreto);     // private: error
+                        interno();            // default: error
+                        ocultar();            // private: error
                     }
                 }
                 """, animal());
-        assertErrores(2, r);
+        assertErrores(4, r);
         assertTrue(r.getErroresSemanticos().toString().contains("Acceso no permitido"));
     }
 
     @Test
-    void nietoVeLoProtegidoYDePaquete() {
+    void nietoVePublicYProtegido() {
         ResultadoCompilacionZ r = analizar("""
                 public class Cachorro extends Perro {
                     public void f() {
-                        println(raza); println(nombre);
-                        proteger(); interno();
+                        println(raza); println(publico);
+                        proteger(); abierto();
                     }
                 }
                 """,
@@ -92,37 +94,35 @@ class VisibilidadZTest {
     // ---------- CLASE NO RELACIONADA ----------
 
     @Test
-    void claseNoRelacionadaVePublicYDePaquetePeroNoProtegidoNiPrivado() {
+    void claseNoRelacionadaSoloVePublic() {
         ResultadoCompilacionZ r = analizar("""
                 public class Visitante {
                     public void f() {
                         Animal a = new Animal();
                         println(a.publico);
-                        println(a.nombre);
-                        println(a.raza);
-                        println(a.secreto);
+                        println(a.nombre);   // default: error
+                        println(a.raza);     // protected: error
+                        println(a.secreto);  // private: error
                     }
                 }
                 """, animal());
-        // raza (protected) y secreto (private) no son accesibles desde Visitante
-        assertErrores(2, r);
+        assertErrores(3, r);
     }
 
     @Test
-    void claseNoRelacionadaNoUsaMetodosProtegidosNiPrivados() {
+    void claseNoRelacionadaNoUsaMetodosNoPublicos() {
         ResultadoCompilacionZ r = analizar("""
                 public class Visitante {
                     public void f() {
                         Animal a = new Animal();
                         a.abierto();
-                        a.interno();
-                        a.proteger();
-                        a.ocultar();
+                        a.interno();    // default: error
+                        a.proteger();   // protected: error
+                        a.ocultar();    // private: error
                     }
                 }
                 """, animal());
-        // proteger y ocultar no son accesibles desde Visitante
-        assertErrores(2, r);
+        assertErrores(3, r);
     }
 
     // ---------- PRIVADO DENTRO DE LA MISMA CLASE ----------
@@ -134,6 +134,33 @@ class VisibilidadZTest {
                     private int saldo;
                     public Cuenta() { }
                     public boolean mayor(Cuenta otra) { return saldo > otra.saldo; }
+                }
+                """);
+        assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
+    }
+
+    // ---------- DEFAULT ES COMO PRIVATE ----------
+
+    @Test
+    void defaultEsComoPrivadoDesdeOtraClase() {
+        ResultadoCompilacionZ r = analizar("""
+                public class Otra {
+                    public void f() {
+                        Animal a = new Animal();
+                        println(a.nombre);
+                    }
+                }
+                """, animal());
+        assertErrores(1, r);
+    }
+
+    @Test
+    void defaultSePuedeUsarDentroDeLaMismaClase() {
+        ResultadoCompilacionZ r = analizar("""
+                public class Animal {
+                    String nombre;
+                    public Animal() { }
+                    public void f() { println(nombre); }
                 }
                 """);
         assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
@@ -160,22 +187,6 @@ class VisibilidadZTest {
                 public class Perro extends Animal {
                     public void f() {
                         proteger();
-                    }
-                }
-                """, animal());
-        assertTrue(r.isExitoso(), r.getErroresSemanticos().toString());
-    }
-
-    // ---------- SIN MODIFICADOR ----------
-
-    @Test
-    void sinModificadorEsAccesibleDesdeCualquierClase() {
-        ResultadoCompilacionZ r = analizar("""
-                public class Visitante {
-                    public void f() {
-                        Animal a = new Animal();
-                        println(a.nombre);
-                        a.interno();
                     }
                 }
                 """, animal());

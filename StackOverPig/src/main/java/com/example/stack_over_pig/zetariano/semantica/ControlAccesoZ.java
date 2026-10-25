@@ -12,11 +12,8 @@ import java.util.List;
  * Reglas:
  *   public     -> cualquiera.
  *   private    -> solo dentro de la clase que lo declara.
- *   protected  -> mismo paquete, o una subclase de la clase que lo declara.
- *   (ninguno)  -> solo dentro del mismo paquete.
- *
- * Simplificacion: en 'protected' no se exige que el objeto por el que se accede sea del
- * tipo de la subclase (Java si lo exige cuando el paquete es distinto).
+ *   protected  -> la clase que lo declara o una subclase de ella.
+ *   (ninguno)  -> como private: solo dentro de la clase que lo declara.
  */
 public class ControlAccesoZ {
 
@@ -34,7 +31,7 @@ public class ControlAccesoZ {
         String actual = tabla.getNombreClase();
         return switch (visibilidad) {
             case PUBLICO -> true;
-            case PAQUETE -> true;      // sin paquetes: cualquier clase del proyecto
+            case PAQUETE -> claseDeclarante.equals(actual);   // como private
             case PROTEGIDO -> claseDeclarante.equals(actual) || tabla.esSubtipo(actual, claseDeclarante);
             case PRIVADO -> claseDeclarante.equals(actual);
         };
@@ -53,17 +50,13 @@ public class ControlAccesoZ {
                         + "' y no se puede usar desde '" + tabla.getNombreClase() + "'"));
         return false;
     }
-/*
-    private boolean mismoPaquete(String clase) {
-        return tabla.paqueteDe(clase).equals(tabla.getPaqueteActual());
-    }
-*/
+
     private String descripcion(Visibilidad visibilidad) {
         return switch (visibilidad) {
             case PUBLICO -> "public";
             case PRIVADO -> "private";
             case PROTEGIDO -> "protected";
-            case PAQUETE -> "de paquete (sin modificador)";
+            case PAQUETE -> "sin modificador (privado)";
         };
     }
 }
