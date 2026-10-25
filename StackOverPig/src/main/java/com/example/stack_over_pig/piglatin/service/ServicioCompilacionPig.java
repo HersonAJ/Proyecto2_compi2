@@ -5,6 +5,7 @@ import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.GestorCodigoInterme
 import com.example.stack_over_pig.piglatin.builder.ASTBuilderPig;
 import com.example.stack_over_pig.piglatin.nodo.NodoAST;
 import com.example.stack_over_pig.piglatin.nodo.NodoPrograma;
+import com.example.stack_over_pig.piglatin.semantica.TablaSimbolosPig;
 import com.example.stack_over_pig.piglatin.semantica.ValidadorSemanticoPig;
 import com.example.stack_over_pig.riscv.EmisorRiscV;
 import com.example.stack_over_pig.riscv.piglatin.GeneradorCuartetasPig;
@@ -61,8 +62,9 @@ public class ServicioCompilacionPig {
         }
 
         try {
+            TablaSimbolosPig tabla = ultimoValidador.getTabla();
             GestorCodigoIntermedio gestor = new GestorCodigoIntermedio();
-            GeneradorCuartetasPig generador = new GeneradorCuartetasPig(gestor);
+            GeneradorCuartetasPig generador = new GeneradorCuartetasPig(gestor, tabla);
             resultado.getPrograma().aceptar(generador);
 
             List<Cuarteta> cuartetas = gestor.getCuartetas();

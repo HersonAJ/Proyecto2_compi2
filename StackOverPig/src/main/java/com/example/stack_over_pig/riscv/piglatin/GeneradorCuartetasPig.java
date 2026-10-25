@@ -6,6 +6,7 @@ import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Romper1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 import com.example.stack_over_pig.piglatin.nodo.NodoExpr;
 import com.example.stack_over_pig.piglatin.nodo.NodoSentencia;
+import com.example.stack_over_pig.piglatin.semantica.TablaSimbolosPig;
 import com.example.stack_over_pig.riscv.VisitanteGeneradorCuartetas;
 
 import java.util.ArrayList;
@@ -20,10 +21,12 @@ import java.util.List;
 public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
 
     private final GestorCodigoIntermedio gestor;
+    private final TablaSimbolosPig tabla;
     private AccesoMemoria ultimoResultado;
 
-    public GeneradorCuartetasPig(GestorCodigoIntermedio gestor) {
+    public GeneradorCuartetasPig(GestorCodigoIntermedio gestor, TablaSimbolosPig tabla) {
         this.gestor = gestor;
+        this.tabla = tabla;
     }
 
     public List<Cuarteta> getCuartetas() {
@@ -316,6 +319,12 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         if (expr instanceof NodoExpr.LiteralTexto) return "textum";
         if (expr instanceof NodoExpr.LiteralCaracter) return "littera";
         if (expr instanceof NodoExpr.LiteralBool) return "bool";
+        if (expr instanceof NodoExpr.Identificador id) {
+            // Consultar la tabla para obtener el tipo real
+            return tabla.buscarVariable(id.nombre())
+                    .map(TablaSimbolosPig.SimboloVariable::tipo)
+                    .orElse("numerus");
+        }
         return "numerus";
     }
 }

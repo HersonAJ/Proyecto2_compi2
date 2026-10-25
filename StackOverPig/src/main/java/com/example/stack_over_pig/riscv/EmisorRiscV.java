@@ -328,18 +328,25 @@ public class EmisorRiscV {
 
     private void cargar(AccesoMemoria acc, String registro) {
         if (acc instanceof Literal l) {
-            if ("numerus".equals(l.getTipo()) || "bool".equals(l.getTipo())) {
-                text.append("    li   ").append(registro).append(", ").append(l.getValor()).append("\n");
-            } else if ("littera".equals(l.getTipo())) {
-                text.append("    li   ").append(registro).append(", ").append((int) ((Character) l.getValor()).charValue()).append("\n");
-            } else if ("decimalis".equals(l.getTipo())) {
-                String etiqueta = "flt_" + contadorFloats++;
-                data.append("    ").append(etiqueta).append(": .float ").append(l.getValor()).append("\n");
-                text.append("    flw  ft0, ").append(etiqueta).append(", t0\n");
-                text.append("    fmv.x.w ").append(registro).append(", ft0\n");
-            } else if ("textum".equals(l.getTipo())) {
+            String tipo = l.getTipo();
+            Object valor = l.getValor();
+
+            if ("numerus".equals(tipo)) {
+                text.append("    li   ").append(registro).append(", ").append(valor).append("\n");
+            } else if ("bool".equals(tipo)) {
+                boolean v = valor instanceof Boolean b ? b : (Integer.parseInt(valor.toString()) != 0);
+                text.append("    li   ").append(registro).append(", ").append(v ? 1 : 0).append("\n");
+            } else if ("littera".equals(tipo)) {
+                int ascii = valor instanceof Character c ? (int) c : Integer.parseInt(valor.toString());
+                text.append("    li   ").append(registro).append(", ").append(ascii).append("\n");
+            } else if ("decimalis".equals(tipo)) {
+                // Venus no soporta punto flotante (extension F).
+                throw new UnsupportedOperationException(
+                        "Venus no soporta 'decimalis' (punto flotante). "
+                                + "Usa solo numerus, bool, littera, textum en Fase 1.");
+            } else if ("textum".equals(tipo)) {
                 String etiqueta = "str_" + contadorStrings++;
-                data.append("    ").append(etiqueta).append(": .asciiz \"").append(l.getValor()).append("\"\n");
+                data.append("    ").append(etiqueta).append(": .asciiz \"").append(valor).append("\"\n");
                 text.append("    la   ").append(registro).append(", ").append(etiqueta).append("\n");
             }
         } else if (acc instanceof AccesoVariable || acc instanceof AccesoTemporal) {

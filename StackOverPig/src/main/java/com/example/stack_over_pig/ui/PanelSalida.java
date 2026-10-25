@@ -4,11 +4,12 @@ import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.scene.control.Tab;
-import javafx.scene.control.TabPane;
-import javafx.scene.control.TableColumn;
-import javafx.scene.control.TableView;
-import javafx.scene.control.TextArea;
+import javafx.scene.control.*;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.text.Font;
 
 public class PanelSalida extends TabPane {
@@ -32,11 +33,14 @@ public class PanelSalida extends TabPane {
         tablaErrores = crearTablaErrores();
         Tab tabErrores = new Tab("Errores", tablaErrores);
 
-        // 3. Codigo C
+        // 3. Codigo C (renombrado a RISC-V si quieres)
         txtCuartetas = crearAreaTerminal();
-        Tab tabCuartetas = new Tab("Codigo C", txtCuartetas);
+        Tab tabCuartetas = new Tab("Codigo RISC-V", txtCuartetas);
 
         getTabs().addAll(tabConsola, tabErrores, tabCuartetas);
+
+        // Atajo Ctrl+C para copiar errores seleccionados o todos
+        configurarAtajoCopiar();
     }
 
     // ---------- Construcción de componentes ----------
@@ -47,7 +51,6 @@ public class PanelSalida extends TabPane {
         area.setWrapText(false);
         area.setFont(Font.font("Consolas", 13));
 
-        // Estilo principal del TextArea
         area.setStyle(
                 "-fx-control-inner-background: #1e1e1e;" +
                         "-fx-background-color: #1e1e1e;" +
@@ -60,9 +63,7 @@ public class PanelSalida extends TabPane {
                         "-fx-faint-focus-color: transparent;"
         );
 
-        // Aplicar los colores a las capas internas
         Runnable aplicarEstilos = () -> {
-
             area.lookupAll(".content").forEach(n -> n.setStyle("-fx-background-color: #1e1e1e;"));
             area.lookupAll(".text").forEach(n -> n.setStyle("-fx-fill: #d4d4d4;"));
             area.lookupAll(".scroll-pane").forEach(n -> n.setStyle("-fx-background-color: #1e1e1e;"));
@@ -70,15 +71,11 @@ public class PanelSalida extends TabPane {
         };
 
         area.skinProperty().addListener((obs, viejo, nuevo) -> aplicarEstilos.run());
-        area.sceneProperty().addListener(
-                (obs, vieja, nueva) -> {
-                    if (nueva != null) {
-                        javafx.application.Platform.runLater(
-                                aplicarEstilos
-                        );
-                    }
-                }
-        );
+        area.sceneProperty().addListener((obs, vieja, nueva) -> {
+            if (nueva != null) {
+                javafx.application.Platform.runLater(aplicarEstilos);
+            }
+        });
 
         return area;
     }
@@ -112,7 +109,61 @@ public class PanelSalida extends TabPane {
         colMensaje.setPrefWidth(500);
 
         tabla.getColumns().addAll(colTipo, colLinea, colColumna, colMensaje);
+
+        // Menú contextual
+        ContextMenu menu = new ContextMenu();
+
+        MenuItem copiarSeleccionados = new MenuItem("Copiar seleccionados");
+        copiarSeleccionados.setOnAction(e -> copiarErrores(true));
+        copiarSeleccionados.setAccelerator(new KeyCodeCombination(KeyCode.C, KeyCombination.CONTROL_DOWN));
+
+        MenuItem copiarTodo = new MenuItem("Copiar todo");
+        copiarTodo.setOnAction(e -> copiarErrores(false));
+
+        menu.getItems().addAll(copiarSeleccionados, copiarTodo);
+        tabla.setContextMenu(menu);
+
         return tabla;
+    }
+
+    private void configurarAtajoCopiar() {
+        setOnKeyPressed(event -> {
+            if (event.isControlDown() && event.getCode() == KeyCode.C
+                    && getSelectionModel().getSelectedItem() == getTabs().get(1)) {
+                copiarErrores(true);
+                event.consume();
+            }
+        });
+    }
+
+    /** Copia los errores al portapapeles. Si 'soloSeleccionados' es true y hay selección, copia solo esos. */
+    private void copiarErrores(boolean soloSeleccionados) {
+        ObservableList<FilaError> aCopiar;
+        if (soloSeleccionados && !tablaErrores.getSelectionModel().getSelectedItems().isEmpty()) {
+            aCopiar = tablaErrores.getSelectionModel().getSelectedItems();
+        } else {
+            aCopiar = modeloErrores;
+        }
+
+        if (aCopiar.isEmpty()) {
+            imprimirConsola("No hay errores para copiar.");
+            return;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("tipo | linea | columna | mensaje\n");
+        for (FilaError e : aCopiar) {
+            sb.append(e.tipo()).append(" | ")
+                    .append(e.linea()).append(" | ")
+                    .append(e.columna()).append(" | ")
+                    .append(e.mensaje()).append("\n");
+        }
+
+        ClipboardContent contenido = new ClipboardContent();
+        contenido.putString(sb.toString());
+        Clipboard.getSystemClipboard().setContent(contenido);
+
+        imprimirConsola("Copiados " + aCopiar.size() + " error(es) al portapapeles.");
     }
 
     // ---------- API pública ----------
