@@ -44,7 +44,9 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
     @Override
     public void visitar(NodoSentencia.DeclaracionVariable d) {
         int offset = tabla.asignarOffsetVariable(d.nombre());
-        tabla.declararVariable(d.nombre(), d.tipo(), 0, null, false, false, d.tipo(), offset);
+        if (!tabla.declararVariable(d.nombre(), d.tipo(), 0, null, false, false, d.tipo(), offset)) {
+            tabla.actualizarOffsetVariable(d.nombre(), offset);
+        }
 
         if (d.inicializacion() != null) {
             d.inicializacion().aceptar(this);
@@ -61,7 +63,9 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
     @Override
     public void visitar(NodoSentencia.DeclaracionArreglo d) {
         int offset = tabla.asignarOffsetVariableConTamano(d.nombre(), d.tamano());
-        tabla.declararVariable(d.nombre(), d.tipo(), 1, d.tamano(), false, false, d.tipo(), offset);
+        if (!tabla.declararVariable(d.nombre(), d.tipo(), 1, d.tamano(), false, false, d.tipo(), offset)) {
+            tabla.actualizarOffsetVariable(d.nombre(), offset);
+        }
 
         if (d.inicializacion() != null && !d.inicializacion().isEmpty()) {
             for (int i = 0; i < d.inicializacion().size(); i++) {

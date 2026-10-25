@@ -202,8 +202,8 @@ public class TablaSimbolosPig {
 
     /** Asigna un offset (fp-relativo) a un arreglo de 'tamano' elementos. */
     public int asignarOffsetVariableConTamano(String nombre, int tamano) {
-        int offset = -siguienteOffset;
-        siguienteOffset += 8 * tamano; // RV64: 8 bytes por elemento
+        int offset = -(siguienteOffset + 8 * (tamano - 1));
+        siguienteOffset += 8 * tamano;
         return offset;
     }
 
@@ -254,5 +254,16 @@ public class TablaSimbolosPig {
     public int getOffsetTemporal(int idTemporal) {
         Integer offset = offsetsTemporales.get("t" + idTemporal);
         return offset != null ? offset : 0;
+    }
+
+    public void actualizarOffsetVariable(String nombre, int offset) {
+        for (Scope scope : pila) {
+            SimboloVariable v = scope.variables.get(nombre);
+            if (v != null) {
+                scope.variables.put(nombre, new SimboloVariable(v.nombre(), v.tipo(), v.dimensiones(),
+                        v.tamanoConocido(), v.esEstructura(), v.esObjeto(), v.tipoOriginal(), offset));
+                return;
+            }
+        }
     }
 }
