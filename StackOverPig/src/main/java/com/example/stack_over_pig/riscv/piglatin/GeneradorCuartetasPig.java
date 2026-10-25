@@ -66,11 +66,9 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         int lNo = gestor.getContador().siguienteEtiqueta();
         int lFin = gestor.getContador().siguienteEtiqueta();
 
-        // Evaluar condición
         c.condicion().aceptar(this);
         AccesoMemoria cond = ultimoResultado;
 
-        // if (cond == 0) goto lNo; else goto lSi
         gestor.emitir(new Condicional1(cond, "==", new Literal(0, "bool"), lNo));
         gestor.emitir(new Salto(lSi));
 
@@ -81,30 +79,27 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         }
         gestor.emitir(new Salto(lFin));
 
-        // Bloque aliter (con condiciones)
-        if (!c.ramasAliter().isEmpty() || c.cuerpoAliter() != null) {
-            gestor.emitir(new DefinicionEtiqueta(lNo));
-            for (NodoSentencia.RamaAliter rama : c.ramasAliter()) {
-                int lSiguiente = gestor.getContador().siguienteEtiqueta();
-                rama.condicion().aceptar(this);
-                AccesoMemoria condRama = ultimoResultado;
-                gestor.emitir(new Condicional1(condRama, "==", new Literal(0, "bool"), lSiguiente));
-                for (NodoSentencia s : rama.cuerpo()) {
-                    s.aceptar(this);
-                }
-                gestor.emitir(new Salto(lFin));
-                gestor.emitir(new DefinicionEtiqueta(lSiguiente));
+        // Bloque aliter (siempre se emite la etiqueta lNo)
+        gestor.emitir(new DefinicionEtiqueta(lNo));
+        for (NodoSentencia.RamaAliter rama : c.ramasAliter()) {
+            int lSiguiente = gestor.getContador().siguienteEtiqueta();
+            rama.condicion().aceptar(this);
+            AccesoMemoria condRama = ultimoResultado;
+            gestor.emitir(new Condicional1(condRama, "==", new Literal(0, "bool"), lSiguiente));
+            for (NodoSentencia s : rama.cuerpo()) {
+                s.aceptar(this);
             }
-            if (c.cuerpoAliter() != null) {
-                for (NodoSentencia s : c.cuerpoAliter()) {
-                    s.aceptar(this);
-                }
+            gestor.emitir(new Salto(lFin));
+            gestor.emitir(new DefinicionEtiqueta(lSiguiente));
+        }
+        if (c.cuerpoAliter() != null) {
+            for (NodoSentencia s : c.cuerpoAliter()) {
+                s.aceptar(this);
             }
         }
 
         gestor.emitir(new DefinicionEtiqueta(lFin));
     }
-
     @Override
     public void visitar(NodoSentencia.CicloDum c) {
         int lInicio = gestor.getContador().siguienteEtiqueta();

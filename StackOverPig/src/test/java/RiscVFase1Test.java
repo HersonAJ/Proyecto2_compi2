@@ -2,7 +2,9 @@ import com.example.stack_over_pig.piglatin.service.ResultadoCompilacionPig;
 import com.example.stack_over_pig.piglatin.service.ServicioCompilacionPig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import com.example.stack_over_pig.piglatin.riscv.EjecutorVenus;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -22,6 +24,126 @@ class RiscVFase1Test {
         return new ServicioCompilacionPig().compilarRiscV(pig, raiz);
     }
 
+    /**
+     * Verifica si Venus esta disponible en lib/venus.jar.
+     */
+    private boolean venusDisponible() {
+        return Files.isRegularFile(Path.of("lib", "venus-jvm-latest.jar"))
+                || Files.isRegularFile(Path.of("src", "main", "resources", "venus-jvm-latest.jar"))
+                || Files.isRegularFile(Path.of("venus-jvm-latest.jar"));
+    }
+
+    // ... (todas las pruebas de texto de antes quedan igual)
+    // (las copio abajo para que no las pierdas)
+
+    // ---------- PRUEBAS CON VENUS ----------
+
+    @Test
+    void venusEjecutaHolaMundo() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(venusDisponible(),
+                "Venus no encontrado en lib/venus-jvm-latest.jar; se omite esta prueba.");
+
+        ResultadoCompilacionPig compilado = compilar("""
+            MAIOR>
+            >> "Hola desde RISC-V" ;
+            FINIS;
+            """);
+        assertTrue(compilado.isExitoso(), compilado.getErroresSemanticos().toString());
+        assertNotNull(compilado.getCodigoRiscV());
+
+        EjecutorVenus ejecutor = new EjecutorVenus();
+        EjecutorVenus.ResultadoEjecucion resultado = ejecutor.ejecutar(compilado.getCodigoRiscV());
+
+        // Salida visible en la consola de la prueba
+        System.out.println("=== .s GENERADO ===");
+        System.out.println(compilado.getCodigoRiscV());
+        System.out.println("=== SALIDA DE VENUS ===");
+        System.out.println(resultado.salida());
+        System.out.println("Exitoso: " + resultado.exitoso());
+        System.out.println("=======================");
+
+        assertTrue(resultado.exitoso(),
+                "Venus fallo. Salida:\n" + resultado.salida()
+                        + "\n--- .s generado ---\n" + compilado.getCodigoRiscV());
+        assertTrue(resultado.salida().contains("Hola desde RISC-V"),
+                "Salida de Venus:\n" + resultado.salida());
+    }
+
+    @Test
+    void venusEjecutaSumaYCondicional() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(venusDisponible(),
+                "Venus no encontrado; se omite esta prueba.");
+
+        ResultadoCompilacionPig compilado = compilar("""
+            VARIABILES>
+            esto x : numerus 10;
+            esto y : numerus 20;
+
+            MAIOR>
+            >> x + y ;
+            si (x < y) {
+                >> "x es menor" ;
+            } finis;
+            FINIS;
+            """);
+        assertTrue(compilado.isExitoso(), compilado.getErroresSemanticos().toString());
+
+        EjecutorVenus ejecutor = new com.example.stack_over_pig.piglatin.riscv.EjecutorVenus();
+        EjecutorVenus.ResultadoEjecucion resultado = ejecutor.ejecutar(compilado.getCodigoRiscV());
+
+        // Salida visible en la consola de la prueba
+        System.out.println("=== .s GENERADO (suma + condicional) ===");
+        System.out.println(compilado.getCodigoRiscV());
+        System.out.println("=== SALIDA DE VENUS ===");
+        System.out.println(resultado.salida());
+        System.out.println("Exitoso: " + resultado.exitoso());
+        System.out.println("=======================");
+
+        assertTrue(resultado.exitoso(),
+                "Venus fallo. Salida:\n" + resultado.salida()
+                        + "\n--- .s generado ---\n" + compilado.getCodigoRiscV());
+
+        String salida = resultado.salida();
+        assertTrue(salida.contains("30"), "Esperaba 30 en la salida:\n" + salida);
+        assertTrue(salida.contains("x es menor"), "Esperaba 'x es menor':\n" + salida);
+    }
+
+    @Test
+    void venusEjecutaCicloDum() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(venusDisponible(),
+                "Venus no encontrado; se omite esta prueba.");
+
+        ResultadoCompilacionPig compilado = compilar("""
+            MAIOR>
+            esto i : numerus 0;
+            dum (i < 3) {
+                >> i ;
+                i = i + 1;
+            } finis;
+            FINIS;
+            """);
+        assertTrue(compilado.isExitoso(), compilado.getErroresSemanticos().toString());
+
+        EjecutorVenus ejecutor = new EjecutorVenus();
+        EjecutorVenus.ResultadoEjecucion resultado = ejecutor.ejecutar(compilado.getCodigoRiscV());
+
+        // Salida visible en la consola de la prueba
+        System.out.println("=== .s GENERADO (ciclo dum) ===");
+        System.out.println(compilado.getCodigoRiscV());
+        System.out.println("=== SALIDA DE VENUS ===");
+        System.out.println(resultado.salida());
+        System.out.println("Exitoso: " + resultado.exitoso());
+        System.out.println("=======================");
+
+        assertTrue(resultado.exitoso(),
+                "Venus fallo. Salida:\n" + resultado.salida()
+                        + "\n--- .s generado ---\n" + compilado.getCodigoRiscV());
+
+        String salida = resultado.salida();
+        assertTrue(salida.contains("0"), salida);
+        assertTrue(salida.contains("1"), salida);
+        assertTrue(salida.contains("2"), salida);
+    }
     // ---------- CASO 1: PROGRAMA VACIO ----------
 
     @Test
