@@ -385,6 +385,12 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
                     .map(TablaSimbolosPig.SimboloVariable::tipo)
                     .orElse("numerus");
         }
+        if (expr instanceof NodoExpr.AccesoAtributo aa && aa.objeto() instanceof NodoExpr.Identificador id) {
+            return tabla.buscarVariable(id.nombre())
+                    .flatMap(v -> tabla.buscarEstructura(v.tipo()))
+                    .map(est -> est.atributos().get(aa.atributo()))
+                    .orElse("numerus");
+        }
 
         return "numerus";
     }

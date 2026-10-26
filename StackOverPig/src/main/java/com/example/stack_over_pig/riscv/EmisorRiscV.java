@@ -405,6 +405,9 @@ public class EmisorRiscV {
     private void almacenar(String registro, AccesoMemoria destino) {
         if (destino instanceof AccesoArreglo arr) {
             almacenarEnArreglo(registro, arr.getBase(), arr.getIndice());
+        } else if (destino instanceof AccesoAtributo1 attr) {
+            direccionCampo(attr.getBase(), attr.getCampo(), DIR);
+            linea("sd   %s, 0(%s)", registro, DIR);
         } else {
             accesoPila("sd", registro, ubicar(destino));
         }
@@ -675,7 +678,7 @@ public class EmisorRiscV {
         int offset = 0;
         for (var entry : estOpt.get().atributos().entrySet()) {
             if (entry.getKey().equals(campo)) return offset;
-            offset -= 8;  // RV64: cada campo ocupa 8 bytes
+            offset += 8;  // campo i en base + 8*i
         }
         throw new IllegalStateException("Campo no encontrado: " + campo + " en " + tipoStruct);
     }

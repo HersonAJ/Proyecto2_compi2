@@ -209,8 +209,9 @@ public class TablaSimbolosPig {
 
     /** Asigna un offset (fp-relativo) a un struct de 'numCampos' campos (8 bytes cada uno). */
     public int asignarOffsetStruct(String nombre, int numCampos) {
-        int offset = -siguienteOffset;
-        siguienteOffset += 8 * numCampos;
+        int n = Math.max(numCampos, 1);
+        int offset = -(siguienteOffset + 8 * (n - 1));  // campo 0 en la dirección más baja
+        siguienteOffset += 8 * n;
         return offset;
     }
 
