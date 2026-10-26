@@ -72,7 +72,7 @@ public sealed interface NodoExpr extends NodoAST permits
 
     record AccesoArray(int linea, int columna, NodoExpr arreglo, NodoExpr indice) implements NodoExpr {
         @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.ACCESO_ARRAY; }
-        @Override public void aceptar(VisitanteGeneradorCuartetas v) { /* Fase 2 */ }
+        @Override public void aceptar(VisitanteGeneradorCuartetas v) { v.visitar(this); }
     }
 
     record AccesoAtributo(int linea, int columna, NodoExpr objeto, String atributo) implements NodoExpr {

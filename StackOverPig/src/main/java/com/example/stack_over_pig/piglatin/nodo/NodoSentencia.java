@@ -36,7 +36,7 @@ public sealed interface NodoSentencia extends NodoAST permits
     record DeclaracionArreglo(int linea, int columna, String tipo, String nombre,
                               int tamano, List<NodoExpr> inicializacion) implements NodoSentencia {
         @Override public TipoNodoSentencia tipoNodo() { return TipoNodoSentencia.DECLARACION_ARREGLO; }
-        @Override public void aceptar(VisitanteGeneradorCuartetas v) { /* Fase 2 */ }
+        @Override public void aceptar(VisitanteGeneradorCuartetas v) { v.visitar(this); }
     }
 
     record DeclaracionStruct(int linea, int columna, String tipo, String nombre,

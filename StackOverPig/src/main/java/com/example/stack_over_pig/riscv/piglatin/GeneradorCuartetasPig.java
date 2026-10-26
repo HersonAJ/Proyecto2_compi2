@@ -67,7 +67,8 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
             tabla.actualizarOffsetVariable(d.nombre(), offset);
         }
 
-        if (d.inicializacion() != null && !d.inicializacion().isEmpty()) {
+        int inicializados = 0;
+        if (d.inicializacion() != null) {
             for (int i = 0; i < d.inicializacion().size(); i++) {
                 d.inicializacion().get(i).aceptar(this);
                 AccesoMemoria valor = ultimoResultado;
@@ -75,7 +76,9 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
                 AccesoMemoria indice = new Literal(i, "numerus");
                 gestor.emitir(new AsignacionArreglo(base, indice, valor));
             }
+            inicializados = d.inicializacion().size();
         }
+        rellenarConCeros(d.nombre(), d.tipo(), inicializados, d.tamano());
     }
 
     @Override
@@ -375,6 +378,38 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
                     .map(TablaSimbolosPig.SimboloVariable::tipo)
                     .orElse("numerus");
         }
+        if (expr instanceof NodoExpr.AccesoArray aa && aa.arreglo() instanceof NodoExpr.Identificador id) {
+            return tabla.buscarVariable(id.nombre())
+                    .map(TablaSimbolosPig.SimboloVariable::tipo)
+                    .orElse("numerus");
+        }
+
         return "numerus";
+    }
+
+    /** Los elementos sin valor inicial quedan en 0, igual que las variables simples. */
+    private void rellenarConCeros(String nombre, String tipoPig, int desde, int hasta) {
+        int faltan = hasta - desde;
+        if (faltan <= 0) return;
+        AccesoVariable base = new AccesoVariable(nombre, tipoAC(tipoPig));
+        if (faltan <= 8) {
+            for (int i = desde; i < hasta; i++) {
+                gestor.emitir(new AsignacionArreglo(base, new Literal(i, "numerus"), new Literal(0, "numerus")));
+            }
+            return;
+        }
+        // arreglos grandes: un ciclo corto en vez de una cuarteta por elemento
+        int lInicio = gestor.getContador().siguienteEtiqueta();
+        int lFin = gestor.getContador().siguienteEtiqueta();
+        AccesoTemporal k = new AccesoTemporal(gestor.getContador().siguienteTemporal("int"), "int");
+        gestor.emitir(new AsignacionVariable(k, new Literal(desde, "numerus")));
+        gestor.emitir(new DefinicionEtiqueta(lInicio));
+        gestor.emitir(new Condicional1(k, ">=", new Literal(hasta, "numerus"), lFin));
+        gestor.emitir(new AsignacionArreglo(base, k, new Literal(0, "numerus")));
+        AccesoTemporal k2 = new AccesoTemporal(gestor.getContador().siguienteTemporal("int"), "int");
+        gestor.emitir(new OperacionBinaria(k2, k, "+", new Literal(1, "numerus")));
+        gestor.emitir(new AsignacionVariable(k, k2));
+        gestor.emitir(new Salto(lInicio));
+        gestor.emitir(new DefinicionEtiqueta(lFin));
     }
 }

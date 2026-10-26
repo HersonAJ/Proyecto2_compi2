@@ -12,19 +12,19 @@ import java.util.*;
 
 /**
  * Recorre las cuartetas y emite ensamblador RISC-V (RV64) siguiendo el esquema visto en clase:
- *
- *   0(fp)    s0 anterior          (fp = s0)
- *  -8(fp)    ra
+ * <p>
+ * 0(fp)    s0 anterior          (fp = s0)
+ * -8(fp)    ra
  * -16(fp)    primera variable local, luego las demás y los temporales del C3D (8 bytes por slot)
- *
- * - Todo vive en la pila con offsets negativos respecto a fp. Cada cuarteta carga de la pila a
- *   registros, opera y vuelve a guardar, así que ningún valor sobrevive entre cuartetas.
+ * <p>
+ * - odo vive en la pila con offsets negativos respecto a fp. Cada cuarteta carga de la pila a
+ * registros, opera y vuelve a guardar, así que ningún valor sobrevive entre cuartetas.
  * - Registros fijos (sin pool cíclico): t0 izquierda, t1 derecha, t2 resultado, t3/t4 direcciones
- *   de arreglos, t6 solo para offsets fuera del rango de 12 bits.
+ * de arreglos, t6 solo para offsets fuera del rango de 12 bits.
  * - Memoria estática: el marco se calcula una sola vez; no hay malloc ni alloca.
  * - Entrada/salida sin librerías de C: ver {@link RutinasConsola} (ecall de Linux).
  * - Los offsets de variables los asigna el GeneradorCuartetasPig en la TablaSimbolosPig; los de los
- *   temporales se piden aquí a la tabla cuando se usan por primera vez.
+ * temporales se piden aquí a la tabla cuando se usan por primera vez.
  */
 public class EmisorRiscV {
 
@@ -43,7 +43,17 @@ public class EmisorRiscV {
      */
     private static final boolean RAMAS_LARGAS = false;
 
-    private static final int BYTES_SLOT = 8;     // RV64: todo slot es de 8 bytes
+    /**
+     * true: al empezar, imprime en la consola (System.out) la lista numerada de cuartetas recibidas, aunque luego falle.
+     */
+    private static final boolean IMPRIMIR_CUARTETAS_EN_CONSOLA = true;
+
+    /**
+     * true: antes de cada cuarteta se escribe un comentario con su descripción (útil para comparar con el C3D).
+     */
+    private static final boolean COMENTAR_CUARTETAS = true;
+
+    private static final int BYTES_SLOT = 8;     // RV64: odo slot es de 8 bytes
     private static final int CAPACIDAD_LECTURA_TEXTO = 256;
 
     private final StringBuilder data = new StringBuilder();   // cadenas literales
@@ -61,15 +71,35 @@ public class EmisorRiscV {
         this.tabla = tabla;
     }
 
-    private record Ubicacion(int offset, String nombre) {}
+    private record Ubicacion(int offset, String nombre) {
+    }
 
     // =====================================================================
     //  PROGRAMA COMPLETO
     // =====================================================================
 
     public String emitir(List<Cuarteta> cuartetas) {
+        if (IMPRIMIR_CUARTETAS_EN_CONSOLA) {
+            System.out.println("===== CUARTETAS RECIBIDAS POR EmisorRiscV (" + cuartetas.size() + ") =====");
+            int k = 0;
+            for (Cuarteta c : cuartetas) {
+                System.out.println("[" + (++k) + "] " + describir(c));
+            }
+            System.out.println("===== FIN DE CUARTETAS =====");
+        }
+
+        int numero = 0;
         for (Cuarteta c : cuartetas) {
-            emitirCuarteta(c);
+            numero++;
+            if (COMENTAR_CUARTETAS) {
+                text.append("    # [").append(numero).append("] ").append(describir(c)).append("\n");
+            }
+            try {
+                emitirCuarteta(c);
+            } catch (RuntimeException e) {
+                throw new IllegalStateException("EmisorRiscV: falló en la cuarteta #" + numero
+                        + " -> " + describir(c) + " | " + e.getMessage(), e);
+            }
         }
 
         // El marco se conoce hasta aquí: ya se pidieron los slots de todos los temporales.
@@ -143,8 +173,8 @@ public class EmisorRiscV {
     // =====================================================================
 
     private void emitirCuarteta(Cuarteta c) {
-        if (c instanceof AsignacionVariable a) emitirAsignacion(a);
-        else if (c instanceof AsignacionArreglo a) emitirAsignacionArreglo(a);
+        if (c instanceof AsignacionArreglo a) emitirAsignacionArreglo(a);
+        else if (c instanceof AsignacionVariable a) emitirAsignacion(a);
         else if (c instanceof OperacionBinaria o) emitirOperacion(o);
         else if (c instanceof OperacionUnaria o) emitirUnaria(o);
         else if (c instanceof Condicional1 cond) emitirCondicional(cond);
@@ -288,7 +318,7 @@ public class EmisorRiscV {
     }
 
     private void emitirConversion(ConversionTipo c) {
-        // TODO: conversiones con punto flotante (fcvt.*). Por ahora solo enteros: copia directa.
+        // : conversiones con punto flotante (fcvt.*). Por ahora solo enteros: copia directa.
         cargar(c.getFuente(), IZQ);
         almacenar(IZQ, c.getDestino());
     }
@@ -343,7 +373,9 @@ public class EmisorRiscV {
     //  CARGAR / GUARDAR
     // =====================================================================
 
-    /** Deja el valor de 'acc' en 'registro'. Solo toca 'registro' y los auxiliares DIR/AUX. */
+    /**
+     * Deja el valor de 'acc' en 'registro'. Solo toca 'registro' y los auxiliares DIR/AUX.
+     */
     private void cargar(AccesoMemoria acc, String registro) {
         if (acc instanceof Literal l) {
             cargarLiteral(l, registro);
@@ -422,7 +454,7 @@ public class EmisorRiscV {
             // asignarOffsetTemporal es idempotente: crea el slot la primera vez y lo reutiliza después
             return new Ubicacion(tabla.asignarOffsetTemporal(t.getNumero()), "t" + t.getNumero());
         }
-        throw new IllegalStateException("EmisorRiscV: no se puede ubicar en la pila: " + acc);
+        throw new IllegalStateException("EmisorRiscV: no se puede ubicar en la pila: " + describir(acc));
     }
 
     private TablaSimbolosPig.SimboloVariable simbolo(AccesoVariable v) {
@@ -442,7 +474,9 @@ public class EmisorRiscV {
         return offset >= -2048 && offset <= 2047;
     }
 
-    /** ld / sd contra la pila; si el offset no cabe en 12 bits calcula la dirección en AUX. */
+    /**
+     * ld / sd contra la pila; si el offset no cabe en 12 bits calcula la dirección en AUX.
+     */
     private void accesoPila(String instruccion, String registro, Ubicacion u) {
         if (cabe(u.offset())) {
             linea("%s   %s, %d(s0)   # %s", instruccion, registro, u.offset(), u.nombre());
@@ -524,6 +558,72 @@ public class EmisorRiscV {
             };
         }
         return Integer.parseInt(s);
+    }
+
+    // =====================================================================
+    //  DESCRIPCIONES (comentarios y mensajes de error)
+    // =====================================================================
+
+    private static String describir(AccesoMemoria acc) {
+        try {
+            if (acc == null) return "null";
+            if (acc instanceof AccesoVariable v) return "var:" + v.getNombre();
+            if (acc instanceof AccesoTemporal t) return "t" + t.getNumero();
+            if (acc instanceof Literal l) return "lit:" + l.getValor() + ":" + l.getTipo();
+            if (acc instanceof AccesoArreglo a)
+                return "arr:" + describir(a.getBase()) + "[" + describir(a.getIndice()) + "]";
+            return acc.getClass().getSimpleName();
+        } catch (RuntimeException e) {
+            return acc.getClass().getSimpleName();
+        }
+    }
+
+    private static String describir(Cuarteta c) {
+        String d;
+        try {
+            if (c instanceof AsignacionArreglo a) {
+                d = "AsignacionArreglo base=" + describir(a.getBase()) + " indice=" + describir(a.getIndice())
+                        + " valor=" + describir(a.getValor());
+            } else if (c instanceof AsignacionVariable a) {
+                d = "AsignacionVariable " + describir(a.getDestino()) + " = " + describir(a.getValor());
+            } else if (c instanceof OperacionBinaria o) {
+                d = "OperacionBinaria " + describir(o.getDestino()) + " = " + describir(o.getIzquierda())
+                        + " " + o.getOperador() + " " + describir(o.getDerecha());
+            } else if (c instanceof OperacionUnaria o) {
+                d = "OperacionUnaria " + describir(o.getDestino()) + " = " + o.getOperador() + " " + describir(o.getOperando());
+            } else if (c instanceof Condicional1 k) {
+                d = "Condicional1 if " + describir(k.getIzquierda()) + " " + k.getOperador() + " "
+                        + describir(k.getDerecha()) + " goto L" + k.getEtiqueta();
+            } else if (c instanceof Salto s) {
+                d = "Salto goto L" + s.getEtiqueta();
+            } else if (c instanceof DefinicionEtiqueta e) {
+                d = "Etiqueta L" + e.getEtiqueta() + ":";
+            } else if (c instanceof ImprimirPig i) {
+                d = "ImprimirPig " + i.getTipo() + " " + describir(i.getValor());
+            } else if (c instanceof LeerPig l) {
+                d = "LeerPig " + l.getTipo() + " -> " + describir(l.getDestino());
+            } else if (c instanceof Llamada l) {
+                StringBuilder args = new StringBuilder();
+                for (AccesoMemoria a : l.getArgumentos()) {
+                    if (args.length() > 0) args.append(", ");
+                    args.append(describir(a));
+                }
+                d = "Llamada " + describir(l.getDestino()) + " = " + l.getNombreFuncion() + "(" + args + ")";
+            } else if (c instanceof Retorno1 r) {
+                d = "Retorno1 " + describir(r.getValor());
+            } else if (c instanceof ConversionTipo ct) {
+                d = "ConversionTipo " + describir(ct.getDestino()) + " = " + describir(ct.getFuente());
+            } else if (c instanceof Continuar1 k) {
+                d = "Continuar goto L" + k.getEtiqueta();
+            } else if (c instanceof Romper1 r) {
+                d = "Romper goto L" + r.getEtiqueta();
+            } else {
+                d = c.getClass().getSimpleName();
+            }
+        } catch (RuntimeException e) {
+            d = c.getClass().getSimpleName();
+        }
+        return d.replace("\n", "\\n").replace("\r", "\\r");
     }
 
     // =====================================================================
