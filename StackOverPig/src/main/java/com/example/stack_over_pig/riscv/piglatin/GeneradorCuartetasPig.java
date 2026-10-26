@@ -2,8 +2,10 @@ package com.example.stack_over_pig.riscv.piglatin;
 
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.AsignacionArreglo;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.AsignacionAtributo;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Continuar1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Romper1;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.AccesoAtributo1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 import com.example.stack_over_pig.piglatin.nodo.NodoExpr;
 import com.example.stack_over_pig.piglatin.nodo.NodoSentencia;
@@ -80,7 +82,7 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         }
         rellenarConCeros(d.nombre(), d.tipo(), inicializados, d.tamano());
     }
-
+/*
     @Override
     public void visitar(NodoSentencia.Asignacion a) {
         a.valor().aceptar(this);
@@ -94,7 +96,7 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
             gestor.emitir(new AsignacionVariable(destino, valor));
         }
     }
-
+*/
     @Override
     public void visitar(NodoSentencia.Condicional c) {
         int lSi = gestor.getContador().siguienteEtiqueta();
@@ -411,5 +413,74 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         gestor.emitir(new AsignacionVariable(k, k2));
         gestor.emitir(new Salto(lInicio));
         gestor.emitir(new DefinicionEtiqueta(lFin));
+    }
+
+    @Override
+    public void visitar(NodoSentencia.DeclaracionStruct d) {
+        // Obtener la definición de la estructura
+        var estOpt = tabla.buscarEstructura(d.tipo());
+        if (estOpt.isEmpty()) {
+            throw new IllegalStateException("Estructura no encontrada: " + d.tipo());
+        }
+        var est = estOpt.get();
+        int numCampos = est.atributos().size();
+
+        int offset = tabla.asignarOffsetStruct(d.nombre(), numCampos);
+        if (!tabla.declararVariable(d.nombre(), d.tipo(), 0, null, true, false, d.tipo(), offset)) {
+            tabla.actualizarOffsetVariable(d.nombre(), offset);
+        }
+
+        // Inicializar campos en orden posicional
+        List<String> nombresCampos = new ArrayList<>(est.atributos().keySet());
+        for (int i = 0; i < d.inicializacion().size() && i < nombresCampos.size(); i++) {
+            d.inicializacion().get(i).aceptar(this);
+            AccesoMemoria valor = ultimoResultado;
+            AccesoVariable base = new AccesoVariable(d.nombre(), d.tipo());
+            gestor.emitir(new AsignacionAtributo(base, nombresCampos.get(i), false, valor));
+        }
+
+        // Rellenar con ceros los campos no inicializados
+        for (int i = d.inicializacion().size(); i < nombresCampos.size(); i++) {
+            AccesoVariable base = new AccesoVariable(d.nombre(), d.tipo());
+            AccesoMemoria cero = new Literal(0, "numerus");
+            gestor.emitir(new AsignacionAtributo(base, nombresCampos.get(i), false, cero));
+        }
+    }
+
+    @Override
+    public void visitar(NodoExpr.AccesoAtributo a) {
+        a.objeto().aceptar(this);
+        AccesoMemoria base = ultimoResultado;
+
+        String tipoCampo = "int";
+        if (a.objeto() instanceof NodoExpr.Identificador id) {
+            var varOpt = tabla.buscarVariable(id.nombre());
+            if (varOpt.isPresent()) {
+                var v = varOpt.get();
+                var estOpt = tabla.buscarEstructura(v.tipo());
+                if (estOpt.isPresent()) {
+                    String t = estOpt.get().atributos().get(a.atributo());
+                    if (t != null) tipoCampo = tipoAC(t);
+                }
+            }
+        }
+
+        ultimoResultado = new AccesoAtributo1(base, a.atributo(), false, tipoCampo);
+    }
+
+    @Override
+    public void visitar(NodoSentencia.Asignacion a) {
+        a.valor().aceptar(this);
+        AccesoMemoria valor = ultimoResultado;
+        a.destino().aceptar(this);
+        AccesoMemoria destino = ultimoResultado;
+
+        if (destino instanceof AccesoArreglo arr) {
+            gestor.emitir(new AsignacionArreglo(arr.getBase(), arr.getIndice(), valor));
+        } else if (destino instanceof AccesoAtributo1 attr) {
+            gestor.emitir(new AsignacionAtributo(attr.getBase(), attr.getCampo(), false, valor));
+        } else {
+            gestor.emitir(new AsignacionVariable(destino, valor));
+        }
     }
 }

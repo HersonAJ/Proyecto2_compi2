@@ -1,8 +1,10 @@
 package com.example.stack_over_pig.riscv;
 
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.AsignacionArreglo;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.AsignacionAtributo;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Continuar1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Romper1;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.AccesoAtributo1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.*;
 import com.example.stack_over_pig.piglatin.semantica.TablaSimbolosPig;
@@ -174,6 +176,7 @@ public class EmisorRiscV {
 
     private void emitirCuarteta(Cuarteta c) {
         if (c instanceof AsignacionArreglo a) emitirAsignacionArreglo(a);
+        else if (c instanceof AsignacionAtributo a) emitirAsignacionAtributo(a);
         else if (c instanceof AsignacionVariable a) emitirAsignacion(a);
         else if (c instanceof OperacionBinaria o) emitirOperacion(o);
         else if (c instanceof OperacionUnaria o) emitirUnaria(o);
@@ -377,9 +380,16 @@ public class EmisorRiscV {
      * Deja el valor de 'acc' en 'registro'. Solo toca 'registro' y los auxiliares DIR/AUX.
      */
     private void cargar(AccesoMemoria acc, String registro) {
+
         if (acc instanceof Literal l) {
             cargarLiteral(l, registro);
-        } else if (acc instanceof AccesoArreglo arr) {
+        }
+     else if (acc instanceof AccesoAtributo1 attr) {
+        direccionCampo(attr.getBase(), attr.getCampo(), DIR);
+        linea("ld   %s, 0(%s)", registro, DIR);
+    }
+
+        else if (acc instanceof AccesoArreglo arr) {
             // elemento = *(base + indice * 8). El índice se evalúa primero, en el mismo registro destino.
             cargar(arr.getIndice(), registro);
             direccionBase(arr.getBase(), DIR);
@@ -624,6 +634,50 @@ public class EmisorRiscV {
             d = c.getClass().getSimpleName();
         }
         return d.replace("\n", "\\n").replace("\r", "\\r");
+    }
+
+    private void emitirAsignacionAtributo(AsignacionAtributo a) {
+        cargar(a.getValor(), IZQ);
+        direccionCampo(a.getBase(), a.getCampo(), DIR);
+        linea("sd   %s, 0(%s)", IZQ, DIR);
+    }
+
+    private void direccionCampo(AccesoMemoria base, String campo, String registro) {
+        // 1. Obtener la dirección base del struct
+        if (!(base instanceof AccesoVariable v)) {
+            throw new UnsupportedOperationException(
+                    "EmisorRiscV: la base de un atributo debe ser una variable");
+        }
+        TablaSimbolosPig.SimboloVariable s = simbolo(v);
+        if (!s.esEstructura()) {
+            throw new UnsupportedOperationException(
+                    "EmisorRiscV: '" + v.getNombre() + "' no es una estructura");
+        }
+
+        // 2. Calcular offset del campo
+        int offsetCampo = calcularOffsetCampo(s.tipo(), campo);
+
+        // 3. Dirección = s0 + s.offset() + offsetCampo
+        int offsetTotal = s.offset() + offsetCampo;
+        if (cabe(offsetTotal)) {
+            linea("addi %s, s0, %d   # &%s.%s", registro, offsetTotal, v.getNombre(), campo);
+        } else {
+            linea("li   %s, %d", registro, offsetTotal);
+            linea("add  %s, s0, %s   # &%s.%s", registro, registro, v.getNombre(), campo);
+        }
+    }
+
+    private int calcularOffsetCampo(String tipoStruct, String campo) {
+        var estOpt = tabla.buscarEstructura(tipoStruct);
+        if (estOpt.isEmpty()) {
+            throw new IllegalStateException("Estructura no encontrada: " + tipoStruct);
+        }
+        int offset = 0;
+        for (var entry : estOpt.get().atributos().entrySet()) {
+            if (entry.getKey().equals(campo)) return offset;
+            offset -= 8;  // RV64: cada campo ocupa 8 bytes
+        }
+        throw new IllegalStateException("Campo no encontrado: " + campo + " en " + tipoStruct);
     }
 
     // =====================================================================

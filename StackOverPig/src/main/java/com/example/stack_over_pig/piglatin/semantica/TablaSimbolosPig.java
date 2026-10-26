@@ -207,6 +207,13 @@ public class TablaSimbolosPig {
         return offset;
     }
 
+    /** Asigna un offset (fp-relativo) a un struct de 'numCampos' campos (8 bytes cada uno). */
+    public int asignarOffsetStruct(String nombre, int numCampos) {
+        int offset = -siguienteOffset;
+        siguienteOffset += 8 * numCampos;
+        return offset;
+    }
+
     /** Asigna un offset (fp-relativo) a un temporal. */
     public int asignarOffsetTemporal(int idTemporal) {
         String key = "t" + idTemporal;

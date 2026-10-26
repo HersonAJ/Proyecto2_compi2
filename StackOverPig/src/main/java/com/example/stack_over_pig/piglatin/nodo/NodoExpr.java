@@ -77,7 +77,7 @@ public sealed interface NodoExpr extends NodoAST permits
 
     record AccesoAtributo(int linea, int columna, NodoExpr objeto, String atributo) implements NodoExpr {
         @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.ACCESO_ATRIBUTO; }
-        @Override public void aceptar(VisitanteGeneradorCuartetas v) { /* Fase 3 */ }
+        @Override public void aceptar(VisitanteGeneradorCuartetas v) { v.visitar(this); }
     }
 
     // OPERACIONES
