@@ -77,9 +77,11 @@ public class EmisorRiscVZ {
         if (funcion.tieneThis()) {
             sb.append("    sd   a0, -16(s0)        # this\n");
         }
+        int baseParam = funcion.tieneThis() ? 1 : 0;
+        int baseOffset = funcion.tieneThis() ? -24 : -16;
         for (int i = 0; i < funcion.parametros().size(); i++) {
-            sb.append("    sd   a").append(i + 1).append(", ")
-                    .append(-24 - i * 8).append("(s0)        # ")
+            sb.append("    sd   a").append(baseParam + i).append(", ")
+                    .append(baseOffset - i * 8).append("(s0)        # ")
                     .append(funcion.parametros().get(i).nombre()).append("\n");
         }
 
@@ -249,9 +251,17 @@ public class EmisorRiscVZ {
     }
 
     private void emitirLlamada(StringBuilder sb, Llamada l) {
+        // Llamada se usa para funciones Y libres (sin this) y para super.metodo(...)
+        // (que lleva this como primer argumento explícito). Distinguimos por el nombre:
+        // los métodos y constructores llevan "_constructor" o están en la tabla de virtuales;
+        // las funciones Y libres no. Para Y, los args van en a0..; para el resto, en a1...
+        boolean esFuncionLibre = !l.getNombreFuncion().contains("_constructor")
+                && !ctx.getVirtuales().esVirtual(l.getNombreFuncion());
+        int base = esFuncionLibre ? 0 : 1;
+
         List<AccesoMemoria> args = l.getArgumentos();
         for (int i = 0; i < args.size(); i++) {
-            cargar(sb, args.get(i), "a" + i, null);
+            cargar(sb, args.get(i), "a" + (base + i), null);
         }
         sb.append("    jal  ra, ").append(l.getNombreFuncion()).append("\n");
         if (l.getDestino() != null) almacenar(sb, "a0", l.getDestino());

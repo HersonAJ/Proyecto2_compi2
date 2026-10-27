@@ -30,7 +30,7 @@ public class ValidadorSemantico {
     private NodoFuncion.Funcion funcionActual;
 
     /** Punto de entrada: recorre el programa completo. */
-    public List<ErrorSemantico> analizar(NodoPrograma.Programa programa) {
+    public List<ErrorSemantico> analizar(NodoProgramaY.Programa programa) {
         // Fase 1: declarar estructuras y firmas de funciones.
         for (NodoEstructura e : programa.estructuras()) {
             declaraciones.declararEstructura((NodoEstructura.Estructura) e);

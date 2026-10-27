@@ -32,7 +32,7 @@ public class ASTBuilder extends YParserBaseVisitor<NodoAST> {
                 }
             }
         }
-        return new NodoPrograma.Programa(linea(ctx), columna(ctx), estructuras, funciones);
+        return new NodoProgramaY.Programa(linea(ctx), columna(ctx), estructuras, funciones);
     }
 
     //estructuras

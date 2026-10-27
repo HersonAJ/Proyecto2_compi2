@@ -9,13 +9,13 @@ import com.example.stack_over_pig.y.semantica.TablaSimbolos;
 import java.util.ArrayList;
 import java.util.List;
 
-public sealed interface NodoPrograma extends NodoAST permits NodoPrograma.Programa {
+public sealed interface NodoProgramaY extends NodoAST permits NodoProgramaY.Programa {
 
     TipoNodoEstructura tipoNodo();
 
     record Programa(int linea, int columna,
                     List<NodoEstructura> estructuras,
-                    List<NodoFuncion> funciones) implements NodoPrograma {
+                    List<NodoFuncion> funciones) implements NodoProgramaY {
         @Override
         public TipoNodoEstructura tipoNodo() {
             return TipoNodoEstructura.PROGRAMA;

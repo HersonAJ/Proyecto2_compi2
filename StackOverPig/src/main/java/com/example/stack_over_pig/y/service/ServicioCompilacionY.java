@@ -3,7 +3,7 @@ package com.example.stack_over_pig.y.service;
 import com.example.stack_over_pig.y.Builder.ASTBuilder;
 import com.example.stack_over_pig.y.analizador.PreprocesadorIndentacion;
 import com.example.stack_over_pig.y.ast.NodoAST;
-import com.example.stack_over_pig.y.ast.NodoPrograma;
+import com.example.stack_over_pig.y.ast.NodoProgramaY;
 import com.example.stack_over_pig.y.errores.ErrorPosicional;
 import com.example.stack_over_pig.y.errores.ResultadoCompilacionY;
 import com.example.stack_over_pig.y.semantica.TablaSimbolos;
@@ -146,11 +146,11 @@ public class ServicioCompilacionY {
         // 4. AST
         if (DEBUG) System.out.println("4. Construyendo AST...");
 
-        NodoPrograma.Programa programa;
+        NodoProgramaY.Programa programa;
         try {
             ASTBuilder builder = new ASTBuilder();
             NodoAST nodo = builder.visit(tree);
-            programa = (nodo instanceof NodoPrograma.Programa np) ? np : null;
+            programa = (nodo instanceof NodoProgramaY.Programa np) ? np : null;
         } catch (Exception e) {
             if (DEBUG) {
                 System.err.println("Error al construir AST: " + e.getMessage());

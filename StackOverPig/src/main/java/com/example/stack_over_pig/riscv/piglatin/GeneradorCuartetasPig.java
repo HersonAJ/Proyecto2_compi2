@@ -340,9 +340,21 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
             args.add(ultimoResultado);
         }
 
+        // El nombre RISC-V real de la función depende de la firma declarada:
+        // si está registrada en la tabla (p. ej. vino de un .y), se usa Nombre_<tipos>.
+        String nombreRiscV = l.nombre();
+        var definicion = tabla.buscarFuncion(l.nombre());
+        if (definicion.isPresent()) {
+            StringBuilder sb = new StringBuilder(l.nombre());
+            for (TablaSimbolosPig.Parametro p : definicion.get().parametros()) {
+                sb.append('_').append(p.tipo());
+            }
+            nombreRiscV = sb.toString();
+        }
+
         int idT = gestor.getContador().siguienteTemporal("int");
         AccesoTemporal t = new AccesoTemporal(idT, "int");
-        gestor.emitir(new Llamada(t, l.nombre(), args));
+        gestor.emitir(new Llamada(t, nombreRiscV, args));
         ultimoResultado = t;
     }
 

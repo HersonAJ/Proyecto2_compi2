@@ -4,6 +4,7 @@ import com.example.stack_over_pig.piglatin.nodo.NodoImportacion;
 import com.example.stack_over_pig.y.ast.*;
 import com.example.stack_over_pig.y.errores.ErrorPosicional;
 import com.example.stack_over_pig.y.errores.ResultadoCompilacionY;
+import com.example.stack_over_pig.y.semantica.TablaSimbolos;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 import com.example.stack_over_pig.y.service.ServicioCompilacionY;
 import com.example.stack_over_pig.zetariano.nodo.*;
@@ -42,6 +43,8 @@ public class ValidadorImportacionesPig {
     private final List<com.example.stack_over_pig.c3d_v2.c.EstructuraC> estructurasImportadas = new ArrayList<>();
     private final List<NodoClase> clasesImportadas = new ArrayList<>();
     private final Map<String, TablaSimbolosZ> tablasZImportadas = new LinkedHashMap<>();
+    private final List<NodoProgramaY.Programa> programasYImportados = new ArrayList<>();
+    private final List<TablaSimbolos> tablasYImportadas = new ArrayList<>();
 
     public ValidadorImportacionesPig(TablaSimbolosPig tabla,
                                      List<ErrorSemantico> errores,
@@ -207,6 +210,12 @@ public class ValidadorImportacionesPig {
                 funcionesImportadas.addAll(resultado.getPrograma().aFuncionesC(tablaY));
             }
         }
+        if (resultado.getPrograma() != null) {
+            programasYImportados.add(resultado.getPrograma());
+            var tablaY = resultado.getTablaSimbolos();
+            if (tablaY != null) tablasYImportadas.add(tablaY);
+        }
+
 
         return true;
     }
@@ -414,5 +423,13 @@ public class ValidadorImportacionesPig {
 
     public Map<String, TablaSimbolosZ> getTablasZImportadas() {
         return tablasZImportadas;
+    }
+
+    public List<NodoProgramaY.Programa> getProgramasYImportados() {
+        return programasYImportados;
+    }
+
+    public List<com.example.stack_over_pig.y.semantica.TablaSimbolos> getTablasYImportadas() {
+        return tablasYImportadas;
     }
 }

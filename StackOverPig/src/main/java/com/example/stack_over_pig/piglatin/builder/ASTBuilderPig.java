@@ -152,6 +152,12 @@ public class ASTBuilderPig extends PigParserBaseVisitor<NodoAST> {
             NodoExpr llamada = (NodoExpr) visit(ctx.llamadaMetodo());
             return new NodoSentencia.LlamadaMetodoSentencia(linea(ctx), columna(ctx), (NodoExpr.LlamadaMetodo) llamada);
         }
+        // Llamada a función suelta como sentencia: 'nombre(args) ;'
+        if (ctx.llamadaFuncion() != null) {
+            NodoExpr llamada = (NodoExpr) visit(ctx.llamadaFuncion());
+            return new NodoSentencia.LlamadaFuncionSentencia(linea(ctx), columna(ctx),
+                    (NodoExpr.LlamadaFuncion) llamada);
+        }
         return visit(ctx.getChild(0));
     }
 

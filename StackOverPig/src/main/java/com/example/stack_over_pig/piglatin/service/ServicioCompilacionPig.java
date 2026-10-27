@@ -15,6 +15,7 @@ import com.example.stack_over_pig.riscv.EmisorRiscV;
 import com.example.stack_over_pig.riscv.FuncionRiscV;
 import com.example.stack_over_pig.riscv.TablaMetodosVirtuales;
 import com.example.stack_over_pig.riscv.piglatin.GeneradorCuartetasPig;
+import com.example.stack_over_pig.riscv.y.GeneradorCuartetasY;
 import com.example.stack_over_pig.riscv.zetariano.GeneradorCuartetasZ;
 import com.example.stack_over_pig.y.errores.ErrorPosicional;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
@@ -25,14 +26,14 @@ import com.example.stack_over_pig.zetariano.nodo.NodoConstructor;
 import com.example.stack_over_pig.zetariano.nodo.NodoMetodo;
 import com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ;
 import org.antlr.v4.runtime.*;
+import com.example.stack_over_pig.y.ast.NodoFuncion;
+import com.example.stack_over_pig.y.ast.NodoProgramaY;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import static com.example.stack_over_pig.zetariano.nodo.TipoNodoSentencia.EXPRESION_COMO_SENTENCIA;
 
 public class ServicioCompilacionPig {
 
@@ -103,7 +104,21 @@ public class ServicioCompilacionPig {
                     funciones.add(new GeneradorCuartetasZ(tablaZ, clase.nombre()).generarMetodo(m));
                 }
             }
-            //hast aqui
+            // 2.b Funciones de los .y importados: una FuncionRiscV por cada función Y.
+            var importaciones = ultimoValidador.getImportaciones();
+            if (importaciones != null) {
+                List<NodoProgramaY.Programa> programasY = importaciones.getProgramasYImportados();
+                List<com.example.stack_over_pig.y.semantica.TablaSimbolos> tablasY = importaciones.getTablasYImportadas();
+                for (int i = 0; i < programasY.size(); i++) {
+                    NodoProgramaY.Programa progY = programasY.get(i);
+                    var tablaY = tablasY.get(i);
+                    for (NodoFuncion nf : progY.funciones()) {
+                        if (nf instanceof NodoFuncion.Funcion f) {
+                            funciones.add(new GeneradorCuartetasY(tablaY).generarFuncion(f));
+                        }
+                    }
+                }
+            }
 
             // 3. Calcular tamaño del heap (instancias de objetos en el .pig)
             int tamanoHeap = calcularTamanoHeap(resultado.getPrograma(), tabla);

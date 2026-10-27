@@ -280,8 +280,14 @@ public class EmisorRiscV {
     private void emitirSalto(int etiqueta) { linea("j    L%d", etiqueta); }
 
     private void emitirLlamada(Llamada l) {
+        boolean esFuncionLibre = !l.getNombreFuncion().contains("_constructor")
+                && !ctx.getVirtuales().esVirtual(l.getNombreFuncion());
+        int base = esFuncionLibre ? 0 : 1;
+
         List<AccesoMemoria> args = l.getArgumentos();
-        for (int i = 0; i < args.size(); i++) cargar(args.get(i), "a" + i);
+        for (int i = 0; i < args.size(); i++) {
+            cargar(args.get(i), "a" + (base + i));
+        }
         linea("jal  ra, %s", l.getNombreFuncion());
         if (l.getDestino() != null) almacenar("a0", l.getDestino());
     }

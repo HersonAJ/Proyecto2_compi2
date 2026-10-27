@@ -62,7 +62,7 @@ public class ResultadoCompilacionY {
 package com.example.stack_over_pig.y.errores;
 
 
-import com.example.stack_over_pig.y.ast.NodoPrograma;
+import com.example.stack_over_pig.y.ast.NodoProgramaY;
 import com.example.stack_over_pig.y.semantica.TablaSimbolos;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 
@@ -74,7 +74,7 @@ import java.util.List;
 public class ResultadoCompilacionY {
 
     private final boolean exitoso;
-    private final NodoPrograma.Programa programa;
+    private final NodoProgramaY.Programa programa;
     private final String codigoPreprocesado;
     private final TablaSimbolos tablaSimbolos;
     private final List<ErrorPosicional> erroresLexicos;
@@ -83,7 +83,7 @@ public class ResultadoCompilacionY {
     private final List<String> mensajesInternos;
 
     public ResultadoCompilacionY(boolean exitoso,
-                                 NodoPrograma.Programa programa,
+                                 NodoProgramaY.Programa programa,
                                  String codigoPreprocesado,
                                  TablaSimbolos tablaSimbolos,
                                  List<ErrorPosicional> erroresLexicos,
@@ -104,7 +104,7 @@ public class ResultadoCompilacionY {
         return exitoso;
     }
 
-    public NodoPrograma.Programa getPrograma() {   // ← tipo concreto
+    public NodoProgramaY.Programa getPrograma() {   // ← tipo concreto
         return programa;
     }
 
