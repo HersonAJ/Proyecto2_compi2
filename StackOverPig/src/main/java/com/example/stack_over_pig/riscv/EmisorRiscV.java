@@ -444,13 +444,7 @@ public class EmisorRiscV {
     }
 
     private String etiquetaCadena(String valor) {
-        String esc = escaparCadena(valor);
-        String existente = ctx.getCadenas().get(esc);
-        if (existente != null) return existente;
-        String etq = "str_" + ctx.getCadenas().size();
-        ctx.getCadenas().put(esc, etq);
-        ctx.getData().append("    ").append(etq).append(": .string \"").append(esc).append("\"\n");
-        return etq;
+        return ctx.etiquetaCadena(valor);
     }
 
     private static String escaparCadena(String s) {

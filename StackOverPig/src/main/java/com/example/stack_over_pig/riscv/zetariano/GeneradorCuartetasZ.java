@@ -356,8 +356,7 @@ public class GeneradorCuartetasZ {
             case INSTANCIA_OBJETO -> visitarInstanciaObjeto((NodoExpr.InstanciaObjeto) e);
             case ARREGLO_NUEVO -> visitarArregloNuevo((NodoExpr.ArregloNuevo) e);
             case OBJETO_ACTUAL -> ultimoResultado = new AccesoVariable("this", tipoClase);
-            case LLAMADA_METODO_SUPER -> throw new UnsupportedOperationException(
-                    "GeneradorCuartetasZ: super.metodo() se implementará en Fase 3c");
+            case LLAMADA_METODO_SUPER -> visitarLlamadaMetodoSuper((NodoExpr.LlamadaMetodoSuper) e);
         }
     }
 
@@ -660,6 +659,13 @@ public class GeneradorCuartetasZ {
                 String tv = tipoPigDeExpresion(t.siVerdadero());
                 yield "null".equals(tv) ? tipoPigDeExpresion(t.siFalso()) : tv;
             }
+            case LLAMADA_METODO_SUPER -> {
+                NodoExpr.LlamadaMetodoSuper ls = (NodoExpr.LlamadaMetodoSuper) e;
+                List<String> tiposArgs = new ArrayList<>();
+                for (NodoExpr arg : ls.argumentos()) tiposArgs.add(tipoPigDeExpresion(arg));
+                var firma = resolverSobrecarga(tabla.getMetodosEnPadre(tipoClase, ls.nombre()), tiposArgs, ls.nombre());
+                yield firma != null && firma.tipoRetorno() != null ? tipoZaPig(firma.tipoRetorno()) : "numerus";
+            }
             default -> "numerus";
         };
     }
@@ -754,5 +760,30 @@ public class GeneradorCuartetasZ {
         String nombre = padre + "_constructor";
         for (String t : firma.tiposParametros()) nombre += "_" + tipoZaPig(t);
         gestor.emitir(new LlamadaMetodo1(null, new AccesoVariable("this", tipoClase), nombre, args));
+    }
+
+    /** super.metodo(args): llamada DIRECTA a la versión del padre (no pasa por la tabla de métodos). */
+    private void visitarLlamadaMetodoSuper(NodoExpr.LlamadaMetodoSuper l) {
+        List<AccesoMemoria> args = new ArrayList<>();
+        args.add(new AccesoVariable("this", tipoClase));      // el receptor viaja como primer argumento (a0)
+        List<String> tiposArgs = new ArrayList<>();
+        for (NodoExpr arg : l.argumentos()) {
+            visitarExpresion(arg);
+            args.add(ultimoResultado);
+            tiposArgs.add(tipoPigDeExpresion(arg));
+        }
+
+        TablaSimbolosZ.Firma firma =
+                resolverSobrecarga(tabla.getMetodosEnPadre(tipoClase, l.nombre()), tiposArgs, l.nombre());
+        if (firma == null) {
+            throw new IllegalStateException(
+                    "GeneradorCuartetasZ: super." + l.nombre() + " no encontrado en las superclases de " + tipoClase);
+        }
+
+        String nombreRiscV = nombreMetodo(claseDeclarante(firma, tabla.getSuperclase()), l.nombre(), firma);
+        String tipoRet = firma.tipoRetorno() != null ? tipoZaPig(firma.tipoRetorno()) : "numerus";
+        AccesoTemporal t = nuevoTemporal(tipoRet);
+        gestor.emitir(new Llamada(t, nombreRiscV, args));
+        ultimoResultado = t;
     }
 }
