@@ -46,6 +46,11 @@ public class GeneradorCuartetasZ {
             tiposVariables.put(p.nombre(), tipoZaPig(p.tipo()));
         }
 
+        // super() implícito: si hay superclase y el constructor no lo escribe, se llama al constructor vacío del padre.
+        if (tabla.getSuperclase() != null && !empiezaConSuper(c.cuerpo())) {
+            emitirLlamadaConstructorPadre(new ArrayList<>(), new ArrayList<>());
+        }
+
         // Emitir cuerpo.
         for (NodoSentencia s : c.cuerpo()) {
             visitarSentencia(s);
@@ -76,6 +81,10 @@ public class GeneradorCuartetasZ {
      * Pendiente (Fase 3c): si la clase tiene superclase, debe llamar al constructor vacío del padre.
      */
     public FuncionRiscV generarConstructorPorDefecto() {
+        if (tabla.getSuperclase() != null) {
+            emitirLlamadaConstructorPadre(new ArrayList<>(), new ArrayList<>());
+        }
+
         gestor.emitir(new Retorno1(new AccesoVariable("this", tipoClase)));
         return new FuncionRiscV(
                 tipoClase + "_constructor", tipoClase, new ArrayList<>(), true, tipoClase,
@@ -137,8 +146,7 @@ public class GeneradorCuartetasZ {
             }
             case SWITCH -> throw new UnsupportedOperationException(
                     "GeneradorCuartetasZ: switch se implementará en Fase 3b.2");
-            case LLAMADA_SUPER_CONSTRUCTOR -> throw new UnsupportedOperationException(
-                    "GeneradorCuartetasZ: super(...) se implementará en Fase 3c");
+            case LLAMADA_SUPER_CONSTRUCTOR -> visitarSuperConstructor((NodoSentencia.LlamadaSuperConstructor) s);
             case CASO_SWITCH, CASO_DEFAULT -> { /* gestionados por Switch */ }
         }
     }
@@ -718,5 +726,33 @@ public class GeneradorCuartetasZ {
             case "boolean" -> "bool";
             default        -> tipoZ;  // clase
         };
+    }
+
+    private static boolean empiezaConSuper(List<NodoSentencia> cuerpo) {
+        return !cuerpo.isEmpty() && cuerpo.get(0) instanceof NodoSentencia.LlamadaSuperConstructor;
+    }
+
+    private void visitarSuperConstructor(NodoSentencia.LlamadaSuperConstructor s) {
+        List<AccesoMemoria> args = new ArrayList<>();
+        List<String> tiposArgs = new ArrayList<>();
+        for (NodoExpr arg : s.argumentos()) {
+            visitarExpresion(arg);
+            args.add(ultimoResultado);
+            tiposArgs.add(tipoPigDeExpresion(arg));
+        }
+        emitirLlamadaConstructorPadre(args, tiposArgs);
+    }
+
+    /** Llama al constructor del padre con 'this' como receptor. El resultado (this) se descarta. */
+    private void emitirLlamadaConstructorPadre(List<AccesoMemoria> args, List<String> tiposArgs) {
+        String padre = tabla.getSuperclase();
+        TablaSimbolosZ.Firma firma = resolverSobrecarga(tabla.getConstructoresDe(padre), tiposArgs, padre);
+        if (firma == null) {
+            throw new IllegalStateException(
+                    "GeneradorCuartetasZ: constructor de " + padre + " no encontrado para " + tiposArgs);
+        }
+        String nombre = padre + "_constructor";
+        for (String t : firma.tiposParametros()) nombre += "_" + tipoZaPig(t);
+        gestor.emitir(new LlamadaMetodo1(null, new AccesoVariable("this", tipoClase), nombre, args));
     }
 }

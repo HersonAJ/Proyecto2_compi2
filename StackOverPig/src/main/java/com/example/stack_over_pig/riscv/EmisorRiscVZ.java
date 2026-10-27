@@ -447,17 +447,7 @@ public class EmisorRiscVZ {
     private Map<String, String> tiposVariablesActuales = Map.of();
 
     private int calcularOffsetCampo(String tipoClase, String campo) {
-        var def = ctx.getTabla().buscarClase(tipoClase);
-        if (def.isEmpty()) {
-            throw new IllegalStateException("EmisorRiscVZ: clase no encontrada: " + tipoClase);
-        }
-        int offset = 0;
-        for (var entry : def.get().atributos().entrySet()) {
-            if (entry.getKey().equals(campo)) return offset;
-            offset += 8;
-        }
-        throw new IllegalStateException(
-                "EmisorRiscVZ: campo no encontrado: " + campo + " en " + tipoClase);
+        return ctx.getDisposicion().offsetCampo(tipoClase, campo);
     }
 
     private void cargarLiteral(StringBuilder sb, Literal l, String registro) {
@@ -523,9 +513,7 @@ public class EmisorRiscVZ {
     }
 
     private int tamanoDeClase(String clase) {
-        var def = ctx.getTabla().buscarClase(clase);
-        if (def.isEmpty()) return 8;
-        return 8 * def.get().atributos().size();
+        return ctx.getDisposicion().tamano(clase);
     }
 
     private void convertirAString(StringBuilder sb, String tipo) {

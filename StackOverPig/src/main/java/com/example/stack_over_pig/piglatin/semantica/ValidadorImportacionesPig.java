@@ -35,6 +35,7 @@ public class ValidadorImportacionesPig {
     private final TablaSimbolosPig tabla;
     private final List<ErrorSemantico> errores;
     private final Path carpetaRaiz;
+    private final Map<String, Path> archivoDeClaseZ = new LinkedHashMap<>();
 
     // codigo C generado de los imports
     private final List<com.example.stack_over_pig.c3d_v2.c.FuncionC> funcionesImportadas = new ArrayList<>();
@@ -91,6 +92,7 @@ public class ValidadorImportacionesPig {
             boolean ok = procesarImportacion(imp, firmasZ);
             if (!ok) todasOk = false;
         }
+        if (todasOk) cargarAncestrosZ(firmasZ);
 
         return todasOk;
     }
@@ -275,46 +277,8 @@ public class ValidadorImportacionesPig {
                 return false;
             }
 
-            // Atributos
-            Map<String, TablaSimbolosPig.AtributoClase> atributos = new LinkedHashMap<>();
-            for (NodoAtributoZ a : clase.atributos()) {
-                atributos.put(a.nombre(), new TablaSimbolosPig.AtributoClase(
-                        a.nombre(), tipoZaPig(a.tipo()), 0));
-            }
-
-            // Constructores
-            List<TablaSimbolosPig.Firma> constructores = new ArrayList<>();
-            for (NodoConstructor c : clase.constructores()) {
-                List<TablaSimbolosPig.Parametro> params = new ArrayList<>();
-                for (NodoParametroZ p : c.parametros()) {
-                    params.add(new TablaSimbolosPig.Parametro(
-                            p.nombre(), tipoZaPig(p.tipo()), 0));
-                }
-                constructores.add(new TablaSimbolosPig.Firma(c.nombre(), params, null));
-            }
-
-            // Métodos
-            List<TablaSimbolosPig.Firma> metodos = new ArrayList<>();
-            for (NodoMetodo m : clase.metodos()) {
-                List<TablaSimbolosPig.Parametro> params = new ArrayList<>();
-                for (NodoParametroZ p : m.parametros()) {
-                    params.add(new TablaSimbolosPig.Parametro(
-                            p.nombre(), tipoZaPig(p.tipo()), 0));
-                }
-                metodos.add(new TablaSimbolosPig.Firma(m.nombre(), params, tipoZaPig(m.tipoRetorno())));
-            }
-
-            TablaSimbolosPig.DefinicionClase def = new TablaSimbolosPig.DefinicionClase(
-                    clase.nombre(), clase.superclase(), atributos, constructores, metodos);
-            tabla.declararClase(def);
-            tablasZImportadas.put(clase.nombre(), resultado.getTablaSimbolos());
-            clasesImportadas.add(clase);
-            //estructurasImportadas.add(clase.aEstructuraC());
-
-            var tablaZ = resultado.getTablaSimbolos();
-            if (tablaZ != null) {
-                //funcionesImportadas.addAll(clase.aFuncionesC(tablaZ));
-            }
+            registrarClaseZ(clase, resultado.getTablaSimbolos());
+            archivoDeClaseZ.put(clase.nombre(), archivo);
         }
 
         return true;
@@ -381,6 +345,66 @@ public class ValidadorImportacionesPig {
                     "Error al leer archivo",
                     "No se pudo leer '" + archivo.toAbsolutePath() + "': " + e.getMessage()));
             return null;
+        }
+    }
+
+    private void registrarClaseZ(NodoClase clase, TablaSimbolosZ tablaZ) {
+        Map<String, TablaSimbolosPig.AtributoClase> atributos = new LinkedHashMap<>();
+        for (NodoAtributoZ a : clase.atributos()) {
+            atributos.put(a.nombre(), new TablaSimbolosPig.AtributoClase(a.nombre(), tipoZaPig(a.tipo()), 0));
+        }
+
+        List<TablaSimbolosPig.Firma> constructores = new ArrayList<>();
+        for (NodoConstructor c : clase.constructores()) {
+            List<TablaSimbolosPig.Parametro> params = new ArrayList<>();
+            for (NodoParametroZ p : c.parametros()) {
+                params.add(new TablaSimbolosPig.Parametro(p.nombre(), tipoZaPig(p.tipo()), 0));
+            }
+            constructores.add(new TablaSimbolosPig.Firma(c.nombre(), params, null));
+        }
+
+        List<TablaSimbolosPig.Firma> metodos = new ArrayList<>();
+        for (NodoMetodo m : clase.metodos()) {
+            List<TablaSimbolosPig.Parametro> params = new ArrayList<>();
+            for (NodoParametroZ p : m.parametros()) {
+                params.add(new TablaSimbolosPig.Parametro(p.nombre(), tipoZaPig(p.tipo()), 0));
+            }
+            metodos.add(new TablaSimbolosPig.Firma(m.nombre(), params, tipoZaPig(m.tipoRetorno())));
+        }
+
+        tabla.declararClase(new TablaSimbolosPig.DefinicionClase(
+                clase.nombre(), clase.superclase(), atributos, constructores, metodos));
+        tablasZImportadas.put(clase.nombre(), tablaZ);
+        clasesImportadas.add(clase);
+    }
+
+    /**
+     * Carga también las superclases de cada clase .z importada (hacia arriba), aunque el .pig no las importe.
+     * Las busca como '<Superclase>.z' en la carpeta de la clase hija. El generador RISC-V las necesita
+     * para generar sus funciones y calcular los offsets de los atributos heredados.
+     */
+    private void cargarAncestrosZ(Map<String, TablaSimbolosZ.DefinicionClaseExterna> firmasZ) {
+        ServicioCompilacionZ servicioZ = new ServicioCompilacionZ();
+        for (int i = 0; i < clasesImportadas.size(); i++) {      // la lista crece mientras se recorre
+            NodoClase hija = clasesImportadas.get(i);
+            String padre = hija.superclase();
+            if (padre == null || tabla.buscarClase(padre).isPresent()) continue;
+
+            Path archivoHija = archivoDeClaseZ.get(hija.nombre());
+            if (archivoHija == null) continue;
+            Path archivoPadre = archivoHija.getParent().resolve(padre + ".z").normalize();
+            if (!Files.isRegularFile(archivoPadre)) continue;
+
+            try {
+                ResultadoCompilacionZ r = servicioZ.analizar(Files.readString(archivoPadre), firmasZ);
+                if (!r.isExitoso() || r.getPrograma() == null) continue;
+                NodoClase clasePadre = r.getPrograma().clase();
+                if (!clasePadre.nombre().equals(padre)) continue;
+                archivoDeClaseZ.put(padre, archivoPadre);
+                registrarClaseZ(clasePadre, r.getTablaSimbolos());
+            } catch (IOException e) {
+                // si el archivo no se puede leer, el análisis semántico ya reportó la superclase
+            }
         }
     }
 

@@ -12,6 +12,7 @@ import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 import com.example.stack_over_pig.piglatin.nodo.NodoExpr;
 import com.example.stack_over_pig.piglatin.nodo.NodoSentencia;
 import com.example.stack_over_pig.piglatin.semantica.TablaSimbolosPig;
+import com.example.stack_over_pig.riscv.DisposicionObjetos;
 import com.example.stack_over_pig.riscv.VisitanteGeneradorCuartetas;
 
 import java.util.ArrayList;
@@ -29,10 +30,12 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
     private final GestorCodigoIntermedio gestor;
     private final TablaSimbolosPig tabla;
     private AccesoMemoria ultimoResultado;
+    private final DisposicionObjetos disposicion;
 
     public GeneradorCuartetasPig(GestorCodigoIntermedio gestor, TablaSimbolosPig tabla) {
         this.gestor = gestor;
         this.tabla = tabla;
+        this.disposicion = new DisposicionObjetos(tabla);
     }
 
     public List<Cuarteta> getCuartetas() {
@@ -400,15 +403,22 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
                     String t = estOpt.get().atributos().get(aa.atributo());
                     if (t != null) return t;
                 }
-                // 2. Buscar en clases.
-                var claseOpt = tabla.buscarClase(tipoVar);
-                if (claseOpt.isPresent()) {
-                    var attr = claseOpt.get().atributos().get(aa.atributo());
-                    if (attr != null) return attr.tipo();
-                }
+                // 2. Buscar en clases (incluye atributos heredados).
+                var atributoClase = disposicion.buscarAtributo(tipoVar, aa.atributo());
+                if (atributoClase.isPresent()) return atributoClase.get().tipo();
             }
             return "numerus";
         }
+
+        if (expr instanceof NodoExpr.InstanciaObjeto io) return io.tipoClase();
+        if (expr instanceof NodoExpr.LlamadaMetodo lm) {
+            List<String> tiposArgs = new ArrayList<>();
+            for (NodoExpr arg : lm.argumentos()) tiposArgs.add(tipoPigLatinDe(arg));
+            return disposicion.buscarMetodo(tipoPigLatinDe(lm.objeto()), lm.nombre(), tiposArgs)
+                    .map(m -> m.firma().tipoRetorno())
+                    .orElse("numerus");
+        }
+
         return "numerus";
     }
 
@@ -520,9 +530,12 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
             tiposArgs.add(tipoPigLatinDe(arg));
         }
 
-        // 2. Nombre RISC-V del constructor: Clase_constructor_<tipos>.
-        StringBuilder nombre = new StringBuilder(inst.tipoClase()).append("_constructor");
-        for (String t : tiposArgs) nombre.append('_').append(t);
+        // 2. Nombre RISC-V del constructor, a partir de los parámetros DECLARADOS.
+        List<String> tiposParam = disposicion.buscarConstructor(inst.tipoClase(), tiposArgs)
+                .orElseThrow(() -> new IllegalStateException(
+                        "GeneradorCuartetasPig: constructor no encontrado en " + inst.tipoClase()
+                                + " para argumentos " + tiposArgs));
+        String nombre = DisposicionObjetos.nombreConstructor(inst.tipoClase(), tiposParam);
 
         // 3. Temporal para el objeto.
         int idT = gestor.getContador().siguienteTemporal(inst.tipoClase());
@@ -549,34 +562,15 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
             tiposArgs.add(tipoPigLatinDe(arg));
         }
 
-        // 3. Resolver sobrecarga en la tabla de clases.
-        var defClase = tabla.buscarClase(tipoObj);
-        if (defClase.isEmpty()) {
-            throw new IllegalStateException(
-                    "GeneradorCuartetasPig: clase no encontrada: " + tipoObj);
-        }
-        TablaSimbolosPig.Firma firma = null;
-        for (var f : defClase.get().metodos().stream()
-                .filter(f -> f.nombre().equals(llamada.nombre())).toList()) {
-            if (f.parametros().size() == tiposArgs.size()) {
-                boolean coincide = true;
-                for (int i = 0; i < tiposArgs.size(); i++) {
-                    if (!f.parametros().get(i).tipo().equals(tiposArgs.get(i))) {
-                        coincide = false;
-                        break;
-                    }
-                }
-                if (coincide) { firma = f; break; }
-            }
-        }
-        if (firma == null) {
-            throw new IllegalStateException(
-                    "GeneradorCuartetasPig: método no encontrado: " + llamada.nombre() + " en " + tipoObj);
-        }
+        // 3. Resolver el método en la clase o en sus ancestros.
+        DisposicionObjetos.MetodoResuelto metodo = disposicion
+                .buscarMetodo(tipoObj, llamada.nombre(), tiposArgs)
+                .orElseThrow(() -> new IllegalStateException(
+                        "GeneradorCuartetasPig: método no encontrado: " + llamada.nombre() + " en " + tipoObj));
+        TablaSimbolosPig.Firma firma = metodo.firma();
 
-        // 4. Nombre RISC-V: Clase_metodo_<tipos>.
-        StringBuilder nombreRiscV = new StringBuilder(tipoObj).append('_').append(llamada.nombre());
-        for (String t : tiposArgs) nombreRiscV.append('_').append(t);
+        // 4. Nombre RISC-V: ClaseDeclarante_metodo_<tipos de los parámetros declarados>.
+        String nombreRiscV = DisposicionObjetos.nombreMetodo(metodo.claseDeclarante(), llamada.nombre(), firma);
 
         // 5. Temporal para el retorno.
         int idT = gestor.getContador().siguienteTemporal(

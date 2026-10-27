@@ -27,6 +27,7 @@ public class ContextoEmision {
     private final StringBuilder bss = new StringBuilder();
     private final StringBuilder text = new StringBuilder();
     private final StringBuilder funciones = new StringBuilder();
+    private final DisposicionObjetos disposicion;
 
     private final Map<String, String> cadenas = new LinkedHashMap<>();
     private final Set<String> rutinasUsadas = new LinkedHashSet<>();
@@ -41,6 +42,7 @@ public class ContextoEmision {
     public ContextoEmision(TablaSimbolosPig tabla, int tamanoHeap) {
         this.tabla = tabla;
         this.tamanoHeap = tamanoHeap;
+        this.disposicion = new DisposicionObjetos(tabla);
     }
 
     public StringBuilder getData()       { return data; }
@@ -57,4 +59,6 @@ public class ContextoEmision {
     public int siguienteEtiqueta() { return contadorEtiquetas++; }
     public int siguienteSalto()    { return contadorSaltos++; }
     public int siguienteBuffer()   { return contadorBuffers++; }
+
+    public DisposicionObjetos getDisposicion() { return  disposicion; }
 }

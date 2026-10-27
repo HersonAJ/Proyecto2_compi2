@@ -10,6 +10,7 @@ import com.example.stack_over_pig.piglatin.nodo.NodoPrograma;
 import com.example.stack_over_pig.piglatin.nodo.NodoSentencia;
 import com.example.stack_over_pig.piglatin.semantica.TablaSimbolosPig;
 import com.example.stack_over_pig.piglatin.semantica.ValidadorSemanticoPig;
+import com.example.stack_over_pig.riscv.DisposicionObjetos;
 import com.example.stack_over_pig.riscv.EmisorRiscV;
 import com.example.stack_over_pig.riscv.FuncionRiscV;
 import com.example.stack_over_pig.riscv.piglatin.GeneradorCuartetasPig;
@@ -83,22 +84,25 @@ public class ServicioCompilacionPig {
             GeneradorCuartetasPig generadorPig = new GeneradorCuartetasPig(gestorPig, tabla);
             resultado.getPrograma().aceptar(generadorPig);
             List<Cuarteta> cuartetasMain = gestorPig.getCuartetas();
-
+//modificado y funciono para constructor 1 no quitar
             // 2. Funciones de las clases importadas (constructores y métodos)
             List<FuncionRiscV> funciones = new ArrayList<>();
             for (NodoClase clase : ultimoValidador.getImportaciones().getClasesImportadas()) {
-                TablaSimbolosZ tablaZ = obtenerTablaZ(clase);  // ver abajo
+                TablaSimbolosZ tablaZ = obtenerTablaZ(clase);
                 if (tablaZ == null) continue;
 
-                GeneradorCuartetasZ generadorZ = new GeneradorCuartetasZ(tablaZ, clase.nombre());
-
+                // Un generador NUEVO por función: guarda las cuartetas y variables de una sola función.
+                if (clase.constructores().isEmpty()) {
+                    funciones.add(new GeneradorCuartetasZ(tablaZ, clase.nombre()).generarConstructorPorDefecto());
+                }
                 for (NodoConstructor c : clase.constructores()) {
-                    funciones.add(generadorZ.generarConstructor(c));
+                    funciones.add(new GeneradorCuartetasZ(tablaZ, clase.nombre()).generarConstructor(c));
                 }
                 for (NodoMetodo m : clase.metodos()) {
                     funciones.add(new GeneradorCuartetasZ(tablaZ, clase.nombre()).generarMetodo(m));
                 }
             }
+            //hast aqui
 
             // 3. Calcular tamaño del heap (instancias de objetos en el .pig)
             int tamanoHeap = calcularTamanoHeap(resultado.getPrograma(), tabla);
@@ -254,12 +258,13 @@ public class ServicioCompilacionPig {
             int num = e.getValue();
             var def = tabla.buscarClase(clase);
             if (def.isPresent()) {
-                int tamanoClase = 8 * def.get().atributos().size();
+                //int tamanoClase = 8 * def.get().atributos().size();
+                int tamanoClase = new DisposicionObjetos(tabla).tamano(clase);
                 total += num * tamanoClase;
             }
         }
         //return total;
-        return Math.max(total + 1024, 4096);
+        return Math.max(total + 1024, 65536);
     }
 
     private void contarInstanciasEnSentencias(List<NodoSentencia> sentencias,

@@ -582,14 +582,9 @@ public class EmisorRiscV {
                 offset += 8;
             }
         }
-        // 2. Buscar en clases.
-        var claseOpt = tabla.buscarClase(tipo);
-        if (claseOpt.isPresent()) {
-            int offset = 0;
-            for (var entry : claseOpt.get().atributos().entrySet()) {
-                if (entry.getKey().equals(campo)) return offset;
-                offset += 8;
-            }
+        // 2. Buscar en clases (incluye atributos heredados, padre primero).
+        if (tabla.buscarClase(tipo).isPresent()) {
+            return ctx.getDisposicion().offsetCampo(tipo, campo);
         }
         throw new IllegalStateException("Campo no encontrado: " + campo + " en " + tipo);
     }
@@ -635,8 +630,6 @@ public class EmisorRiscV {
     }
 
     private int tamanoDeClase(String clase) {
-        var def = tabla.buscarClase(clase);
-        if (def.isEmpty()) return 8;
-        return 8 * def.get().atributos().size();
+        return ctx.getDisposicion().tamano(clase);
     }
 }
