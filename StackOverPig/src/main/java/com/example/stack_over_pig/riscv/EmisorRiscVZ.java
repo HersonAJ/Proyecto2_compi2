@@ -263,7 +263,14 @@ public class EmisorRiscVZ {
         for (int i = 0; i < args.size(); i++) {
             cargar(sb, args.get(i), "a" + (i + 1), null);
         }
-        sb.append("    jal  ra, ").append(l.getNombreMetodo()).append("\n");
+        String metodo = l.getNombreMetodo();
+        if (ctx.getVirtuales().esVirtual(metodo)) {
+            sb.append("    ld   t5, 0(a0)   # tabla de métodos del objeto\n");
+            sb.append("    ld   t5, ").append(ctx.getVirtuales().desplazamiento(metodo)).append("(t5)   # ").append(metodo).append("\n");
+            sb.append("    jalr ra, t5, 0\n");
+        } else {
+            sb.append("    jal  ra, ").append(metodo).append("\n");
+        }
         if (l.getDestino() != null) almacenar(sb, "a0", l.getDestino());
     }
 
@@ -276,6 +283,11 @@ public class EmisorRiscVZ {
         sb.append("    sd   ").append(DIR).append(", 0(").append(IZQ).append(")\n");
         sb.append("    la   ").append(AUX).append(", heap\n");
         sb.append("    add  a0, ").append(AUX).append(", ").append(DER).append("\n");
+        var virtuales = ctx.getVirtuales();
+        if (virtuales.tieneTabla(n.getNombreClase())) {
+            sb.append("    la   ").append(IDX).append(", ").append(virtuales.etiquetaTabla(n.getNombreClase())).append("\n");
+            sb.append("    sd   ").append(IDX).append(", 0(a0)   # tabla de métodos del objeto\n");
+        }
 
         List<AccesoMemoria> args = n.getArgumentos();
         for (int i = 0; i < args.size(); i++) {

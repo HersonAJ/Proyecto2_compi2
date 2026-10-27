@@ -13,6 +13,7 @@ import com.example.stack_over_pig.piglatin.semantica.ValidadorSemanticoPig;
 import com.example.stack_over_pig.riscv.DisposicionObjetos;
 import com.example.stack_over_pig.riscv.EmisorRiscV;
 import com.example.stack_over_pig.riscv.FuncionRiscV;
+import com.example.stack_over_pig.riscv.TablaMetodosVirtuales;
 import com.example.stack_over_pig.riscv.piglatin.GeneradorCuartetasPig;
 import com.example.stack_over_pig.riscv.zetariano.GeneradorCuartetasZ;
 import com.example.stack_over_pig.y.errores.ErrorPosicional;
@@ -109,7 +110,9 @@ public class ServicioCompilacionPig {
 
             // 4. Emitir
             EmisorRiscV emisor = new EmisorRiscV(tabla, tamanoHeap);
-            String codigoRiscV = emisor.emitir(cuartetasMain, funciones);
+            TablaMetodosVirtuales virtuales =
+                    TablaMetodosVirtuales.construir(ultimoValidador.getImportaciones().getClasesImportadas());
+            String codigoRiscV = emisor.emitir(cuartetasMain, funciones, virtuales);
 
             return new ResultadoCompilacionPig(
                     true,

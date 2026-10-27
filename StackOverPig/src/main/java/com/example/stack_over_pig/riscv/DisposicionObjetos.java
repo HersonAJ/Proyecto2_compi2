@@ -26,6 +26,7 @@ import java.util.Set;
 public class DisposicionObjetos {
 
     public static final int BYTES_CAMPO = 8;
+    public static final int ENCABEZADO = 8;
 
     /** Un método encontrado, junto con la clase donde está escrito. */
     public record MetodoResuelto(String claseDeclarante, TablaSimbolosPig.Firma firma) {}
@@ -68,7 +69,7 @@ public class DisposicionObjetos {
             throw new IllegalStateException(
                     "DisposicionObjetos: campo no encontrado: " + campo + " en " + clase);
         }
-        return encontrado * BYTES_CAMPO;
+        return ENCABEZADO + encontrado * BYTES_CAMPO;
     }
 
     /** Bytes que ocupa un objeto de esa clase (incluye los atributos heredados). Mínimo 8. */
@@ -77,7 +78,7 @@ public class DisposicionObjetos {
         for (String c : cadenaDesdeRaiz(clase)) {
             campos += tabla.buscarClase(c).get().atributos().size();
         }
-        return Math.max(1, campos) * BYTES_CAMPO;
+        return ENCABEZADO + campos * BYTES_CAMPO;
     }
 
     /** Busca el atributo en la clase y luego en sus ancestros (gana el más cercano). */

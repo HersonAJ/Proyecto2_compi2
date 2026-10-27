@@ -51,7 +51,12 @@ public class EmisorRiscV {
     private record Ubicacion(int offset, String nombre) {}
 
     public String emitir(List<Cuarteta> main, List<FuncionRiscV> funciones) {
+        return emitir(main, funciones, TablaMetodosVirtuales.vacia());
+    }
+
+    public String emitir(List<Cuarteta> main, List<FuncionRiscV> funciones, TablaMetodosVirtuales virtuales) {
         ctx = new ContextoEmision(tabla, tamanoHeap);
+        ctx.setVirtuales(virtuales);
 
         // 1. Emitir main.
         if (IMPRIMIR_CUARTETAS_EN_CONSOLA) {
@@ -93,6 +98,7 @@ public class EmisorRiscV {
 
         // .bss: buffers de lectura + heap estático (si hay objetos)
         StringBuilder bssFinal = new StringBuilder(ctx.getBss());
+        bssFinal.append(ctx.getVirtuales().seccionData());
         if (tamanoHeap > 0) {
             bssFinal.append("    .align 3\n");                                // ← alinear a 8 bytes
             bssFinal.append("    heap:       .space ").append(tamanoHeap).append("\n");
@@ -110,6 +116,7 @@ public class EmisorRiscV {
         out.append(".text\n");
         out.append(".globl _start\n");
         out.append("_start:\n");
+        out.append(ctx.getVirtuales().codigoInicializacion());
         out.append("    jal  ra, main\n");
         out.append("    li   a0, 0\n");
         out.append("    li   a7, 93\n");
@@ -606,6 +613,10 @@ public class EmisorRiscV {
         linea("sd   %s, 0(%s)", DIR, IZQ);
         linea("la   %s, heap", AUX);
         linea("add  a0, %s, %s", AUX, DER);
+        if (ctx.getVirtuales().tieneTabla(n.getNombreClase())) {
+            linea("la   %s, %s", IDX, ctx.getVirtuales().etiquetaTabla(n.getNombreClase()));
+            linea("sd   %s, 0(a0)   # tabla de métodos del objeto", IDX);
+        }
 
         List<AccesoMemoria> args = n.getArgumentos();
         for (int i = 0; i < args.size(); i++) {
@@ -623,7 +634,14 @@ public class EmisorRiscV {
         for (int i = 0; i < args.size(); i++) {
             cargar(args.get(i), "a" + (i + 1));
         }
-        linea("jal  ra, %s", l.getNombreMetodo());
+        String metodo = l.getNombreMetodo();
+        if (ctx.getVirtuales().esVirtual(metodo)) {
+            linea("ld   t5, 0(a0)   # tabla de métodos del objeto");
+            linea("ld   t5, %d(t5)   # %s", ctx.getVirtuales().desplazamiento(metodo), metodo);
+            linea("jalr ra, t5, 0");
+        } else {
+            linea("jal  ra, %s", metodo);
+        }
         if (l.getDestino() != null) {
             almacenar("a0", l.getDestino());
         }

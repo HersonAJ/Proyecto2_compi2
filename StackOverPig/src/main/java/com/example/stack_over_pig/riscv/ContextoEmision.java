@@ -31,6 +31,7 @@ public class ContextoEmision {
 
     private final Map<String, String> cadenas = new LinkedHashMap<>();
     private final Set<String> rutinasUsadas = new LinkedHashSet<>();
+    private TablaMetodosVirtuales virtuales = TablaMetodosVirtuales.vacia();
 
     private int contadorEtiquetas = 0;
     private int contadorSaltos = 0;
@@ -61,4 +62,7 @@ public class ContextoEmision {
     public int siguienteBuffer()   { return contadorBuffers++; }
 
     public DisposicionObjetos getDisposicion() { return  disposicion; }
+
+    public TablaMetodosVirtuales getVirtuales() { return virtuales; }
+    public void setVirtuales(TablaMetodosVirtuales v) { this.virtuales = v; }
 }
