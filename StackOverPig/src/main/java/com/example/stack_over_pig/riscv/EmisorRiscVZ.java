@@ -42,6 +42,7 @@ public class EmisorRiscVZ {
     private final Map<String, Integer> offsets = new LinkedHashMap<>();
     private int siguienteOffset = 8;
     private String tipoClaseActual;
+    private Set<String> parametrosPorReferencia = Set.of();
 
     public EmisorRiscVZ(ContextoEmision ctx) {
         this.ctx = ctx;
@@ -50,6 +51,10 @@ public class EmisorRiscVZ {
     public void emitirFuncion(FuncionRiscV funcion) {
         tipoClaseActual = funcion.tipoClase();
         tiposVariablesActuales = funcion.tiposVariables();
+        parametrosPorReferencia = new HashSet<>();
+        for (FuncionRiscV.ParametroRiscV p : funcion.parametros()) {
+            if (p.esPorReferencia()) parametrosPorReferencia.add(p.nombre());
+        }
         asignarOffsets(funcion);
 
         // Cuerpo primero: durante la emisión offsetDe() va reservando temporales y locales.
@@ -105,10 +110,36 @@ public class EmisorRiscVZ {
     private int offsetDe(String nombre) {
         Integer off = offsets.get(nombre);
         if (off != null) return off;
-        siguienteOffset += 8;
+        String tipo = tiposVariablesActuales.get(nombre);
+        int bytes = tamanoEnBytes(nombre, tipo);
+        bytes = ((bytes + 7) / 8) * 8;      // alinear a 8
+        siguienteOffset += bytes;
         int nuevo = -siguienteOffset;
         offsets.put(nombre, nuevo);
         return nuevo;
+    }
+
+    /** Bytes que ocupa en la pila una variable de este tipo Pig (struct, arreglo o primitivo). */
+    private int tamanoEnBytes(String nombre, String tipoPig) {
+        if (tipoPig == null) return 8;
+
+        // Struct Y importado: 8 * numCampos.
+        var est = ctx.getTabla().buscarEstructura(tipoPig);
+        if (est.isPresent()) {
+            return 8 * Math.max(1, est.get().atributos().size());
+        }
+
+        // Arreglo local: 8 * tamanoConocido (si está en la tabla).
+        var sim = ctx.getTabla().buscarVariable(nombre);
+        if (sim.isPresent()) {
+            var s = sim.get();
+            if (s.dimensiones() > 0 && s.tamanoConocido() != null) {
+                return 8 * Math.max(1, s.tamanoConocido());
+            }
+        }
+
+        // Primitivo o clase Z (un puntero de 8 bytes).
+        return 8;
     }
 
     private String prologo(int framesize) {
@@ -373,14 +404,47 @@ public class EmisorRiscVZ {
             sb.append("    ld   ").append(registro).append(", 0(").append(DIR).append(")\n");
         } else {
             int off = ubicar(acc);
-            if (cabe(off)) {
-                sb.append("    ld   ").append(registro).append(", ").append(off).append("(s0)\n");
+            boolean porRef = acc instanceof AccesoVariable v && esParametroPorReferencia(v.getNombre());
+            String tipoVar = acc instanceof AccesoVariable v ? tipoDeVariable(v.getNombre()) : null;
+            boolean esAgregado = tipoVar != null
+                    && (ctx.getTabla().buscarEstructura(tipoVar).isPresent()
+                    || ctx.getTabla().buscarVariable(vNombre(acc)).map(s -> s.dimensiones() > 0).orElse(false));
+
+            if (esAgregado) {
+                // Struct o arreglo: hay que devolver la dirección, no el contenido.
+                if (porRef) {
+                    // parámetro por referencia: el slot YA contiene un puntero, lo cargamos.
+                    if (cabe(off)) {
+                        sb.append("    ld   ").append(registro).append(", ").append(off).append("(s0)\n");
+                    } else {
+                        sb.append("    li   ").append(AUX).append(", ").append(off).append("\n");
+                        sb.append("    add  ").append(AUX).append(", s0, ").append(AUX).append("\n");
+                        sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
+                    }
+                } else {
+                    // local por valor: la dirección es s0 + off.
+                    if (cabe(off)) {
+                        sb.append("    addi ").append(registro).append(", s0, ").append(off).append("\n");
+                    } else {
+                        sb.append("    li   ").append(registro).append(", ").append(off).append("\n");
+                        sb.append("    add  ").append(registro).append(", s0, ").append(registro).append("\n");
+                    }
+                }
             } else {
-                sb.append("    li   ").append(AUX).append(", ").append(off).append("\n");
-                sb.append("    add  ").append(AUX).append(", s0, ").append(AUX).append("\n");
-                sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
+                // primitivo: cargar el valor como antes.
+                if (cabe(off)) {
+                    sb.append("    ld   ").append(registro).append(", ").append(off).append("(s0)\n");
+                } else {
+                    sb.append("    li   ").append(AUX).append(", ").append(off).append("\n");
+                    sb.append("    add  ").append(AUX).append(", s0, ").append(AUX).append("\n");
+                    sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
+                }
             }
         }
+    }
+
+    private static String vNombre(AccesoMemoria acc) {
+        return acc instanceof AccesoVariable v ? v.getNombre() : null;
     }
 
     private void almacenar(StringBuilder sb, String registro, AccesoMemoria destino) {
@@ -415,12 +479,30 @@ public class EmisorRiscVZ {
                     "EmisorRiscVZ: base de arreglo debe ser variable");
         }
         int off = offsetDe(v.getNombre());
-        if (cabe(off)) {
-            sb.append("    addi ").append(registro).append(", s0, ").append(off).append("\n");
+        if (esParametroPorReferencia(v.getNombre())) {
+            // El slot contiene un puntero al inicio del arreglo/struct.
+            if (cabe(off)) {
+                sb.append("    ld   ").append(registro).append(", ").append(off).append("(s0)\n");
+            } else {
+                sb.append("    li   ").append(AUX).append(", ").append(off).append("\n");
+                sb.append("    add  ").append(AUX).append(", s0, ").append(AUX).append("\n");
+                sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
+            }
         } else {
-            sb.append("    li   ").append(registro).append(", ").append(off).append("\n");
-            sb.append("    add  ").append(registro).append(", s0, ").append(registro).append("\n");
+            // Variable local struct/arreglo: el slot ya es la dirección.
+            if (cabe(off)) {
+                sb.append("    addi ").append(registro).append(", s0, ").append(off).append("\n");
+            } else {
+                sb.append("    li   ").append(registro).append(", ").append(off).append("\n");
+                sb.append("    add  ").append(registro).append(", s0, ").append(registro).append("\n");
+            }
         }
+    }
+
+    /** true si el nombre corresponde a un parámetro Y declarado como [] T arr o {} T p. */
+    private boolean esParametroPorReferencia(String nombre) {
+        if (parametrosPorReferencia == null) return false;
+        return parametrosPorReferencia.contains(nombre);
     }
 
     /**
@@ -430,6 +512,7 @@ public class EmisorRiscVZ {
     private void direccionCampo(StringBuilder sb, AccesoMemoria base, String campo, String registro) {
         String tipoClase;
         int offObjeto;
+        boolean porReferencia = false;
 
         if (base instanceof AccesoVariable v && v.getNombre().equals("this")) {
             tipoClase = tipoClaseActual;
@@ -437,14 +520,48 @@ public class EmisorRiscVZ {
         } else if (base instanceof AccesoVariable v) {
             tipoClase = tipoDeVariable(v.getNombre());
             offObjeto = offsetDe(v.getNombre());
+            porReferencia = esParametroPorReferencia(v.getNombre());
         } else {
             throw new UnsupportedOperationException(
                     "EmisorRiscVZ: base de atributo debe ser 'this' o una variable");
         }
 
-        int offCampo = calcularOffsetCampo(tipoClase, campo);
+        // 1. Struct Y: buscar en TablaSimbolosPig (donde el validador de Pig lo registró).
+        var estOpt = ctx.getTabla().buscarEstructura(tipoClase);
+        if (estOpt.isPresent()) {
+            int offCampo = 0;
+            for (var entry : estOpt.get().atributos().entrySet()) {
+                if (entry.getKey().equals(campo)) break;
+                offCampo += 8;
+            }
+            // Cargar la dirección base.
+            if (porReferencia) {
+                // slot = puntero al struct
+                if (cabe(offObjeto)) {
+                    sb.append("    ld   ").append(registro).append(", ").append(offObjeto).append("(s0)\n");
+                } else {
+                    sb.append("    li   ").append(AUX).append(", ").append(offObjeto).append("\n");
+                    sb.append("    add  ").append(AUX).append(", s0, ").append(AUX).append("\n");
+                    sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
+                }
+            } else {
+                // slot = dirección del struct local (por valor)
+                if (cabe(offObjeto)) {
+                    sb.append("    addi ").append(registro).append(", s0, ").append(offObjeto).append("\n");
+                } else {
+                    sb.append("    li   ").append(registro).append(", ").append(offObjeto).append("\n");
+                    sb.append("    add  ").append(registro).append(", s0, ").append(registro).append("\n");
+                }
+            }
+            if (offCampo != 0) {
+                sb.append("    addi ").append(registro).append(", ").append(registro)
+                        .append(", ").append(offCampo).append("\n");
+            }
+            return;
+        }
 
-        // Cargar el puntero del objeto en registro.
+        // 2. Clase Z: comportamiento original.
+        int offCampo = calcularOffsetCampo(tipoClase, campo);
         if (cabe(offObjeto)) {
             sb.append("    ld   ").append(registro).append(", ").append(offObjeto).append("(s0)\n");
         } else {
@@ -452,7 +569,6 @@ public class EmisorRiscVZ {
             sb.append("    add  ").append(AUX).append(", s0, ").append(AUX).append("\n");
             sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
         }
-        // Sumar offset del campo.
         if (offCampo != 0) {
             sb.append("    addi ").append(registro).append(", ").append(registro)
                     .append(", ").append(offCampo).append("\n");

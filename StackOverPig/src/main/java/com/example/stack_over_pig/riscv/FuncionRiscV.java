@@ -25,5 +25,9 @@ public record FuncionRiscV(
         Map<String, String> tiposVariables,
         List<Cuarteta> cuartetas) {
 
-    public record ParametroRiscV(String nombre, String tipoPig) {}
+    public record ParametroRiscV(String nombre, String tipoPig, boolean esPorReferencia) {
+        public ParametroRiscV(String nombre, String tipoPig) {
+            this(nombre, tipoPig, false);
+        }
+    }
 }
