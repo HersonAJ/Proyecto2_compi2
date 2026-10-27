@@ -21,6 +21,8 @@ import java.util.*;
  * Todos los tipos que viajan en las cuartetas están en vocabulario Pig
  * (numerus, textum, littera, bool, decimalis o nombre de clase). Los tipos que vienen
  * de la tabla de símbolos de Z (int, String, char, boolean, double) se traducen con tipoZaPig.
+ *
+ * Una instancia de este generador sirve para UNA sola función (guarda estado por función).
  */
 public class GeneradorCuartetasZ {
 
@@ -65,6 +67,18 @@ public class GeneradorCuartetasZ {
 
         return new FuncionRiscV(
                 nombre, tipoClase, params, true, tipoClase,
+                new LinkedHashMap<>(tiposVariables),
+                new ArrayList<>(gestor.getCuartetas()));
+    }
+
+    /**
+     * Constructor por defecto implícito (clase sin constructores declarados): solo devuelve this.
+     * Pendiente (Fase 3c): si la clase tiene superclase, debe llamar al constructor vacío del padre.
+     */
+    public FuncionRiscV generarConstructorPorDefecto() {
+        gestor.emitir(new Retorno1(new AccesoVariable("this", tipoClase)));
+        return new FuncionRiscV(
+                tipoClase + "_constructor", tipoClase, new ArrayList<>(), true, tipoClase,
                 new LinkedHashMap<>(tiposVariables),
                 new ArrayList<>(gestor.getCuartetas()));
     }
@@ -141,12 +155,43 @@ public class GeneradorCuartetasZ {
         }
     }
 
+    /** '=', '+=', '-=', '*='. La compuesta lee el destino, opera y vuelve a guardar. */
     private void visitarAsignacion(NodoSentencia.Asignacion a) {
-        visitarExpresion(a.valor());
-        AccesoMemoria valor = ultimoResultado;
+        String opBinario = operadorBinarioDeCompuesta(a.operador());
+
+        if (opBinario == null) {
+            visitarExpresion(a.valor());
+            AccesoMemoria valor = ultimoResultado;
+            visitarExpresion(a.destino());
+            AccesoMemoria destino = ultimoResultado;
+            almacenarEn(destino, valor);
+            return;
+        }
+
+        // Compuesta: destino (se evalúa una sola vez), luego valor.
         visitarExpresion(a.destino());
         AccesoMemoria destino = ultimoResultado;
+        visitarExpresion(a.valor());
+        AccesoMemoria valor = ultimoResultado;
 
+        String tipoRes = tipoBinario(destino.getTipo(), opBinario, valor.getTipo());
+        AccesoTemporal t = nuevoTemporal(tipoRes);
+        gestor.emitir(new OperacionBinaria(t, destino, opBinario, valor));
+        almacenarEn(destino, t);
+    }
+
+    private static String operadorBinarioDeCompuesta(String operador) {
+        if (operador == null) return null;
+        return switch (operador) {
+            case "+=" -> "+";
+            case "-=" -> "-";
+            case "*=" -> "*";
+            default -> null;   // '=' (o cualquier otro) es asignación simple
+        };
+    }
+
+    /** Guarda 'valor' en 'destino' según el tipo de destino (arreglo, atributo o variable/temporal). */
+    private void almacenarEn(AccesoMemoria destino, AccesoMemoria valor) {
         if (destino instanceof AccesoArreglo arr) {
             gestor.emitir(new AsignacionArreglo(arr.getBase(), arr.getIndice(), valor));
         } else if (destino instanceof AccesoAtributo1 attr) {
@@ -256,11 +301,26 @@ public class GeneradorCuartetasZ {
         }
     }
 
+    /**
+     * println / print. El salto de línea se emite como un segundo ImprimirPig con "\n".
+     * Un bool se imprime como true/false: se concatena con "" para reutilizar la conversión a texto.
+     */
     private void visitarImprimir(NodoSentencia.Imprimir i) {
         visitarExpresion(i.expresion());
         AccesoMemoria acc = ultimoResultado;
         String tipo = tipoPigDeExpresion(i.expresion());
+
+        if ("bool".equals(tipo)) {
+            AccesoTemporal t = nuevoTemporal("textum");
+            gestor.emitir(new OperacionBinaria(t, new Literal("", "textum"), "+", acc));
+            acc = t;
+            tipo = "textum";
+        }
         gestor.emitir(new ImprimirPig(acc, tipo));
+
+        if (i.saltoDeLinea()) {
+            gestor.emitir(new ImprimirPig(new Literal("\n", "textum"), "textum"));
+        }
     }
 
     // ========== EXPRESIONES ==========
@@ -333,77 +393,126 @@ public class GeneradorCuartetasZ {
     }
 
     private void visitarBinaria(NodoExpr.Binaria b) {
+        if ("&&".equals(b.operador()) || "||".equals(b.operador())) {
+            visitarLogicaCortocircuito(b);
+            return;
+        }
+
         visitarExpresion(b.izquierda());
         AccesoMemoria izq = ultimoResultado;
         visitarExpresion(b.derecha());
         AccesoMemoria der = ultimoResultado;
 
         String tipoRes = tipoBinario(izq.getTipo(), b.operador(), der.getTipo());
-        int idT = gestor.getContador().siguienteTemporal(tipoRes);
-        AccesoTemporal t = new AccesoTemporal(idT, tipoRes);
+        AccesoTemporal t = nuevoTemporal(tipoRes);
         gestor.emitir(new OperacionBinaria(t, izq, b.operador(), der));
         ultimoResultado = t;
+    }
+
+    /**
+     * a && b : si a es falso, b NO se evalúa.   a || b : si a es verdadero, b NO se evalúa.
+     * El resultado vive en un temporal bool que se fija antes de saltar a lFin.
+     */
+    private void visitarLogicaCortocircuito(NodoExpr.Binaria b) {
+        boolean esAnd = "&&".equals(b.operador());
+        int lFin = gestor.getContador().siguienteEtiqueta();
+        AccesoTemporal res = nuevoTemporal("bool");
+
+        // Valor por defecto si se corta el cálculo: && -> 0, || -> 1.
+        gestor.emitir(new AsignacionVariable(res, new Literal(esAnd ? 0 : 1, "bool")));
+
+        String saltarSi = esAnd ? "==" : "!=";
+
+        visitarExpresion(b.izquierda());
+        gestor.emitir(new Condicional1(ultimoResultado, saltarSi, new Literal(0, "bool"), lFin));
+
+        visitarExpresion(b.derecha());
+        gestor.emitir(new Condicional1(ultimoResultado, saltarSi, new Literal(0, "bool"), lFin));
+
+        // Llegó hasta aquí sin cortar: && -> 1, || -> 0.
+        gestor.emitir(new AsignacionVariable(res, new Literal(esAnd ? 1 : 0, "bool")));
+        gestor.emitir(new DefinicionEtiqueta(lFin));
+        ultimoResultado = res;
     }
 
     private void visitarUnaria(NodoExpr.Unaria u) {
         visitarExpresion(u.operando());
         AccesoMemoria op = ultimoResultado;
         String tipoRes = "!".equals(u.operador()) ? "bool" : "numerus";
-        int idT = gestor.getContador().siguienteTemporal(tipoRes);
-        AccesoTemporal t = new AccesoTemporal(idT, tipoRes);
+        AccesoTemporal t = nuevoTemporal(tipoRes);
         gestor.emitir(new OperacionUnaria(t, u.operador(), op));
         ultimoResultado = t;
     }
 
+    /** ++x / --x devuelven el valor nuevo; x++ / x-- devuelven el valor anterior. */
     private void visitarIncrementoDecremento(NodoExpr.IncrementoDecremento inc) {
         visitarExpresion(inc.operando());
         AccesoMemoria op = ultimoResultado;
 
-        String opBinario = "++".equals(inc.operador()) ? "+" : "-";
-        AccesoMemoria uno = new Literal(1, "numerus");
-        int idT = gestor.getContador().siguienteTemporal("numerus");
-        AccesoTemporal t = new AccesoTemporal(idT, "numerus");
-        gestor.emitir(new OperacionBinaria(t, op, opBinario, uno));
-
-        if (op instanceof AccesoAtributo1 attr) {
-            gestor.emitir(new AsignacionAtributo(attr.getBase(), attr.getCampo(), true, t));
-        } else {
-            gestor.emitir(new AsignacionVariable(op, t));
+        AccesoTemporal viejo = null;
+        if (!inc.prefijo()) {
+            viejo = nuevoTemporal("numerus");
+            gestor.emitir(new AsignacionVariable(viejo, op));
         }
-        ultimoResultado = op;
+
+        String opBinario = "++".equals(inc.operador()) ? "+" : "-";
+        AccesoTemporal nuevo = nuevoTemporal("numerus");
+        gestor.emitir(new OperacionBinaria(nuevo, op, opBinario, new Literal(1, "numerus")));
+        almacenarEn(op, nuevo);
+
+        ultimoResultado = inc.prefijo() ? op : viejo;
     }
 
+    /** cond ? a : b : las dos ramas escriben en el mismo temporal. */
     private void visitarTernaria(NodoExpr.Ternaria t) {
-        int lSi = gestor.getContador().siguienteEtiqueta();
         int lNo = gestor.getContador().siguienteEtiqueta();
         int lFin = gestor.getContador().siguienteEtiqueta();
 
-        visitarExpresion(t.condicion());
-        AccesoMemoria cond = ultimoResultado;
-        gestor.emitir(new Condicional1(cond, "==", new Literal(0, "bool"), lNo));
-        gestor.emitir(new Salto(lSi));
+        String tipoRes = tipoPigDeExpresion(t.siVerdadero());
+        if ("null".equals(tipoRes)) tipoRes = tipoPigDeExpresion(t.siFalso());
+        AccesoTemporal res = nuevoTemporal(tipoRes);
 
-        gestor.emitir(new DefinicionEtiqueta(lSi));
+        visitarExpresion(t.condicion());
+        gestor.emitir(new Condicional1(ultimoResultado, "==", new Literal(0, "bool"), lNo));
+
         visitarExpresion(t.siVerdadero());
-        AccesoMemoria temp = ultimoResultado;
+        gestor.emitir(new AsignacionVariable(res, ultimoResultado));
         gestor.emitir(new Salto(lFin));
 
         gestor.emitir(new DefinicionEtiqueta(lNo));
         visitarExpresion(t.siFalso());
-        gestor.emitir(new DefinicionEtiqueta(lFin));
+        gestor.emitir(new AsignacionVariable(res, ultimoResultado));
 
-        ultimoResultado = temp;
+        gestor.emitir(new DefinicionEtiqueta(lFin));
+        ultimoResultado = res;
     }
 
+    /**
+     * 'metodo(args)' sin receptor: en Zetariano solo puede ser un método de la propia clase
+     * (o heredado), o sea this.metodo(args).
+     */
     private void visitarLlamadaFuncion(NodoExpr.LlamadaFuncion l) {
         List<AccesoMemoria> args = new ArrayList<>();
+        List<String> tiposArgs = new ArrayList<>();
         for (NodoExpr arg : l.argumentos()) {
             visitarExpresion(arg);
             args.add(ultimoResultado);
+            tiposArgs.add(tipoPigDeExpresion(arg));
         }
-        int idT = gestor.getContador().siguienteTemporal("numerus");
-        AccesoTemporal t = new AccesoTemporal(idT, "numerus");
-        gestor.emitir(new Llamada(t, l.nombre(), args));
+
+        TablaSimbolosZ.Firma firma =
+                resolverSobrecarga(tabla.getMetodosDe(tipoClase, l.nombre()), tiposArgs, l.nombre());
+        if (firma == null) {
+            throw new IllegalStateException(
+                    "GeneradorCuartetasZ: método no encontrado: " + l.nombre() + " en " + tipoClase);
+        }
+
+        String nombreRiscV = nombreMetodo(claseDeclarante(firma, tipoClase), l.nombre(), firma);
+        AccesoVariable receptor = new AccesoVariable("this", tipoClase);
+
+        String tipoRet = firma.tipoRetorno() != null ? tipoZaPig(firma.tipoRetorno()) : "numerus";
+        AccesoTemporal t = nuevoTemporal(tipoRet);
+        gestor.emitir(new LlamadaMetodo1(t, receptor, nombreRiscV, args));
         ultimoResultado = t;
     }
 
@@ -420,21 +529,18 @@ public class GeneradorCuartetasZ {
             tiposArgs.add(tipoPigDeExpresion(arg));
         }
 
-        List<TablaSimbolosZ.Firma> firmas = tabla.getMetodosDe(tipoObj, l.nombre());
-        TablaSimbolosZ.Firma firma = resolverSobrecarga(firmas, tiposArgs, l.nombre());
+        TablaSimbolosZ.Firma firma =
+                resolverSobrecarga(tabla.getMetodosDe(tipoObj, l.nombre()), tiposArgs, l.nombre());
         if (firma == null) {
             throw new IllegalStateException(
                     "GeneradorCuartetasZ: método no encontrado: " + l.nombre() + " en " + tipoObj);
         }
 
-        String nombreRiscV = tipoObj + "_" + l.nombre();
-        for (String t : tiposArgs) nombreRiscV += "_" + t;
+        // El nombre sale de la FIRMA declarada (tipos de los parámetros), no de los argumentos.
+        String nombreRiscV = nombreMetodo(claseDeclarante(firma, tipoObj), l.nombre(), firma);
 
-        // El temporal del resultado toma el tipo de retorno del método (para que una
-        // concatenación como obj.nombre() + "x" sepa que el operando es textum).
         String tipoRet = firma.tipoRetorno() != null ? tipoZaPig(firma.tipoRetorno()) : "numerus";
-        int idT = gestor.getContador().siguienteTemporal(tipoRet);
-        AccesoTemporal t = new AccesoTemporal(idT, tipoRet);
+        AccesoTemporal t = nuevoTemporal(tipoRet);
         gestor.emitir(new LlamadaMetodo1(t, obj, nombreRiscV, args));
         ultimoResultado = t;
     }
@@ -448,8 +554,16 @@ public class GeneradorCuartetasZ {
             tiposArgs.add(tipoPigDeExpresion(arg));
         }
 
+        TablaSimbolosZ.Firma firma =
+                resolverSobrecarga(tabla.getConstructoresDe(inst.tipoClase()), tiposArgs, inst.tipoClase());
+        if (firma == null) {
+            throw new IllegalStateException(
+                    "GeneradorCuartetasZ: constructor no encontrado en " + inst.tipoClase()
+                            + " para argumentos " + tiposArgs);
+        }
+
         String nombreConstructor = inst.tipoClase() + "_constructor";
-        for (String t : tiposArgs) nombreConstructor += "_" + t;
+        for (String t : firma.tiposParametros()) nombreConstructor += "_" + tipoZaPig(t);
 
         int idT = gestor.getContador().siguienteTemporal(inst.tipoClase());
         AccesoTemporal t = new AccesoTemporal(idT, inst.tipoClase());
@@ -464,8 +578,7 @@ public class GeneradorCuartetasZ {
             dims.add(ultimoResultado);
         }
 
-        int idT = gestor.getContador().siguienteTemporal("numerus");
-        AccesoTemporal t = new AccesoTemporal(idT, "numerus");
+        AccesoTemporal t = nuevoTemporal("numerus");
 
         if (dims.size() == 1) {
             gestor.emitir(new NewArreglo(t, a.tipoBase(), dims.get(0)));
@@ -477,6 +590,11 @@ public class GeneradorCuartetasZ {
     }
 
     // ========== HELPERS ==========
+
+    private AccesoTemporal nuevoTemporal(String tipo) {
+        int idT = gestor.getContador().siguienteTemporal(tipo);
+        return new AccesoTemporal(idT, tipo);
+    }
 
     /** Tipo (vocabulario Pig) del resultado de una operación binaria. */
     private static String tipoBinario(String tipoIzq, String operador, String tipoDer) {
@@ -514,8 +632,14 @@ public class GeneradorCuartetasZ {
                 String tipoObj = tipoPigDeExpresion(lm.objeto());
                 List<String> tiposArgs = new ArrayList<>();
                 for (NodoExpr arg : lm.argumentos()) tiposArgs.add(tipoPigDeExpresion(arg));
-                var firmas = tabla.getMetodosDe(tipoObj, lm.nombre());
-                var firma = resolverSobrecarga(firmas, tiposArgs, lm.nombre());
+                var firma = resolverSobrecarga(tabla.getMetodosDe(tipoObj, lm.nombre()), tiposArgs, lm.nombre());
+                yield firma != null && firma.tipoRetorno() != null ? tipoZaPig(firma.tipoRetorno()) : "numerus";
+            }
+            case LLAMADA_FUNCION -> {
+                NodoExpr.LlamadaFuncion lf = (NodoExpr.LlamadaFuncion) e;
+                List<String> tiposArgs = new ArrayList<>();
+                for (NodoExpr arg : lf.argumentos()) tiposArgs.add(tipoPigDeExpresion(arg));
+                var firma = resolverSobrecarga(tabla.getMetodosDe(tipoClase, lf.nombre()), tiposArgs, lf.nombre());
                 yield firma != null && firma.tipoRetorno() != null ? tipoZaPig(firma.tipoRetorno()) : "numerus";
             }
             case BINARIA -> {
@@ -523,20 +647,64 @@ public class GeneradorCuartetasZ {
                 yield tipoBinario(tipoPigDeExpresion(b.izquierda()), b.operador(), tipoPigDeExpresion(b.derecha()));
             }
             case UNARIA -> "!".equals(((NodoExpr.Unaria) e).operador()) ? "bool" : "numerus";
+            case TERNARIA -> {
+                NodoExpr.Ternaria t = (NodoExpr.Ternaria) e;
+                String tv = tipoPigDeExpresion(t.siVerdadero());
+                yield "null".equals(tv) ? tipoPigDeExpresion(t.siFalso()) : tv;
+            }
             default -> "numerus";
         };
     }
 
-    /** Busca la firma cuyos tipos de parámetro (traducidos a Pig) coinciden con los de los argumentos. */
+    /**
+     * Elige la firma cuyos parámetros (traducidos a Pig) coinciden con los argumentos.
+     * Primero busca coincidencia exacta; si no hay, acepta compatibilidad (subclase, null).
+     */
     private TablaSimbolosZ.Firma resolverSobrecarga(List<TablaSimbolosZ.Firma> firmas,
                                                     List<String> tiposArgs, String nombre) {
         for (TablaSimbolosZ.Firma f : firmas) {
-            List<String> tiposFirma = f.tiposParametros().stream()
-                    .map(GeneradorCuartetasZ::tipoZaPig)
-                    .toList();
-            if (tiposFirma.equals(tiposArgs)) return f;
+            if (tiposParametrosPig(f).equals(tiposArgs)) return f;
+        }
+        for (TablaSimbolosZ.Firma f : firmas) {
+            List<String> params = tiposParametrosPig(f);
+            if (params.size() != tiposArgs.size()) continue;
+            boolean compatible = true;
+            for (int i = 0; i < params.size(); i++) {
+                if (!tipoCompatible(tiposArgs.get(i), params.get(i))) { compatible = false; break; }
+            }
+            if (compatible) return f;
         }
         return null;
+    }
+
+    private static List<String> tiposParametrosPig(TablaSimbolosZ.Firma f) {
+        return f.tiposParametros().stream().map(GeneradorCuartetasZ::tipoZaPig).toList();
+    }
+
+    /** ¿Se puede pasar un argumento de tipo 'arg' a un parámetro de tipo 'param'? */
+    private boolean tipoCompatible(String arg, String param) {
+        if (arg == null || param == null) return false;
+        if (arg.equals(param)) return true;
+        if ("null".equals(arg)) return !esPrimitivoPig(param);
+        if (esPrimitivoPig(arg) || esPrimitivoPig(param)) return false;
+        if ("textum".equals(arg) || "textum".equals(param)) return false;
+        return tabla.esSubtipo(arg, param);
+    }
+
+    private static boolean esPrimitivoPig(String t) {
+        return "numerus".equals(t) || "decimalis".equals(t) || "littera".equals(t) || "bool".equals(t);
+    }
+
+    /** Nombre RISC-V de un método: Clase_metodo_<tipos de los parámetros declarados>. */
+    private static String nombreMetodo(String clase, String metodo, TablaSimbolosZ.Firma f) {
+        StringBuilder sb = new StringBuilder(clase).append('_').append(metodo);
+        for (String t : f.tiposParametros()) sb.append('_').append(tipoZaPig(t));
+        return sb.toString();
+    }
+
+    /** Clase donde está escrito el método (con herencia puede ser un ancestro de la clase del receptor). */
+    private static String claseDeclarante(TablaSimbolosZ.Firma f, String porDefecto) {
+        return f.claseDeclarante() != null ? f.claseDeclarante() : porDefecto;
     }
 
     /** Traduce un tipo de Zetariano al vocabulario Pig. Si ya está en Pig o es una clase, lo deja igual. */

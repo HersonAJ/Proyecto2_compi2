@@ -58,19 +58,22 @@ public class EmisorRiscVZ {
         for (Cuarteta c : funcion.cuartetas()) {
             numero++;
             cuerpo.append("    # [").append(numero).append("] ").append(c.getClass().getSimpleName()).append("\n");
-            try { emitirCuarteta(cuerpo, c, funcion); }
-            catch (RuntimeException e) { throw new IllegalStateException(
-                    "EmisorRiscVZ: falló en cuarteta #" + numero + " de " + funcion.nombre() + " | " + e.getMessage(), e); }
+            try {
+                emitirCuarteta(cuerpo, c, funcion);
+            } catch (RuntimeException e) {
+                throw new IllegalStateException(
+                        "EmisorRiscVZ: falló en cuarteta #" + numero + " de " + funcion.nombre() + " | " + e.getMessage(), e);
+            }
         }
 
-        int framesize = ((siguienteOffset + 15) / 16) * 16;   // ahora sí incluye todo
+        // +8 porque el slot más profundo (-N(s0)) debe quedar DENTRO del marco: s0 = sp + framesize - 8.
+        int framesize = ((siguienteOffset + 8 + 15) / 16) * 16;
 
         StringBuilder sb = ctx.getFunciones();
         sb.append("\n# ---------- Función: ").append(funcion.nombre()).append(" ----------\n");
         sb.append(funcion.nombre()).append(":\n");
         sb.append(prologo(framesize));
 
-        // Guardar this y parámetros en el marco.
         if (funcion.tieneThis()) {
             sb.append("    sd   a0, -16(s0)        # this\n");
         }
@@ -80,18 +83,6 @@ public class EmisorRiscVZ {
                     .append(funcion.parametros().get(i).nombre()).append("\n");
         }
 
-        // Cuerpo.
-        for (Cuarteta c : funcion.cuartetas()) {
-            numero++;
-            sb.append("    # [").append(numero).append("] ").append(c.getClass().getSimpleName()).append("\n");
-            try {
-                emitirCuarteta(sb, c, funcion);
-            } catch (RuntimeException e) {
-                throw new IllegalStateException(
-                        "EmisorRiscVZ: falló en cuarteta #" + numero + " de "
-                                + funcion.nombre() + " | " + e.getMessage(), e);
-            }
-        }
         sb.append(cuerpo);
         sb.append(epilogo(framesize, funcion));
     }
@@ -172,56 +163,26 @@ public class EmisorRiscVZ {
     }
 
     private void emitirOperacion(StringBuilder sb, OperacionBinaria o) {
-        cargar(sb, o.getIzquierda(), IZQ, null);
-        cargar(sb, o.getDerecha(), DER, null);
-
         // Concatenación: '+' con al menos un operando textum.
-        /*
-        if ("+".equals(o.getOperador())
-                && ("textum".equals(o.getIzquierda().getTipo())
-                || "textum".equals(o.getDerecha().getTipo()))) {
-
-            ctx.getRutinasUsadas().add(RutinasConsola.CONCAT);
-
-            if (!"textum".equals(o.getIzquierda().getTipo())) {
-                ctx.getRutinasUsadas().add(RutinasConsola.Z_TO_STRING_INT);
-                sb.append("    mv   a1, ").append(IZQ).append("\n");
-                sb.append("    jal  ra, ").append(RutinasConsola.Z_TO_STRING_INT).append("\n");
-                sb.append("    mv   ").append(IZQ).append(", a0\n");
-            }
-            if (!"textum".equals(o.getDerecha().getTipo())) {
-                ctx.getRutinasUsadas().add(RutinasConsola.Z_TO_STRING_INT);
-                sb.append("    mv   a1, ").append(DER).append("\n");
-                sb.append("    jal  ra, ").append(RutinasConsola.Z_TO_STRING_INT).append("\n");
-                sb.append("    mv   ").append(DER).append(", a0\n");
-            }
-            sb.append("    mv   a0, ").append(IZQ).append("\n");
-            sb.append("    mv   a1, ").append(DER).append("\n");
-            sb.append("    jal  ra, ").append(RutinasConsola.CONCAT).append("\n");
-            almacenar(sb, "a0", o.getDestino());
-            return;
-        }*/
-
         if ("+".equals(o.getOperador()) && (esTextum(o.getIzquierda()) || esTextum(o.getDerecha()))) {
             ctx.getRutinasUsadas().add(RutinasConsola.CONCAT);
 
-            // 1) Izquierda -> string en a0, y se guarda en el slot del destino
             cargar(sb, o.getIzquierda(), "a0", null);
-            if (!esTextum(o.getIzquierda())) convertirAString(sb);
+            if (!esTextum(o.getIzquierda())) convertirAString(sb, o.getIzquierda().getTipo());
             almacenar(sb, "a0", o.getDestino());
 
-            // 2) Derecha -> string en a0, luego pasa a a1
             cargar(sb, o.getDerecha(), "a0", null);
-            if (!esTextum(o.getDerecha())) convertirAString(sb);
+            if (!esTextum(o.getDerecha())) convertirAString(sb, o.getDerecha().getTipo());
             sb.append("    mv   a1, a0\n");
 
-            // 3) Recuperar la izquierda y concatenar
             cargar(sb, o.getDestino(), "a0", null);
             sb.append("    jal  ra, ").append(RutinasConsola.CONCAT).append("\n");
             almacenar(sb, "a0", o.getDestino());
             return;
         }
 
+        cargar(sb, o.getIzquierda(), IZQ, null);
+        cargar(sb, o.getDerecha(), DER, null);
 
         switch (o.getOperador()) {
             case "+" -> sb.append("    add  ").append(RES).append(", ").append(IZQ).append(", ").append(DER).append("\n");
@@ -467,7 +428,7 @@ public class EmisorRiscVZ {
         } else {
             sb.append("    li   ").append(AUX).append(", ").append(offObjeto).append("\n");
             sb.append("    add  ").append(AUX).append(", s0, ").append(AUX).append("\n");
-            sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append("\n");
+            sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
         }
         // Sumar offset del campo.
         if (offCampo != 0) {
@@ -517,6 +478,7 @@ public class EmisorRiscVZ {
             }
             case "decimalis" -> throw new UnsupportedOperationException(
                     "EmisorRiscVZ: literales decimalis no soportados");
+            case "null" -> sb.append("    li   ").append(registro).append(", 0\n");
             default -> throw new IllegalArgumentException("Tipo literal: " + l.getTipo());
         }
     }
@@ -566,9 +528,14 @@ public class EmisorRiscVZ {
         return 8 * def.get().atributos().size();
     }
 
-    private void convertirAString(StringBuilder sb) {
-        ctx.getRutinasUsadas().add(RutinasConsola.Z_TO_STRING_INT);
+    private void convertirAString(StringBuilder sb, String tipo) {
+        String rutina = switch (tipo == null ? "" : tipo) {
+            case "littera" -> RutinasConsola.Z_TO_STRING_CHAR;
+            case "bool"    -> RutinasConsola.Z_TO_STRING_BOOL;
+            default        -> RutinasConsola.Z_TO_STRING_INT;
+        };
+        ctx.getRutinasUsadas().add(rutina);
         sb.append("    mv   a1, a0\n");
-        sb.append("    jal  ra, ").append(RutinasConsola.Z_TO_STRING_INT).append("\n");
+        sb.append("    jal  ra, ").append(rutina).append("\n");
     }
 }

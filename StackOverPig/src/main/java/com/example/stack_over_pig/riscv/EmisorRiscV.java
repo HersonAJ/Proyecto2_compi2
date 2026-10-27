@@ -75,7 +75,7 @@ public class EmisorRiscV {
             }
         }
 
-        int framesize = ((tabla.getSiguienteOffset() + 15) / 16) * 16;
+        int framesize = ((tabla.getSiguienteOffset() + 8 + 15) / 16) * 16;
 
         // 2. Emitir funciones de Z.
         EmisorRiscVZ emisorZ = new EmisorRiscVZ(ctx);
@@ -97,7 +97,7 @@ public class EmisorRiscV {
             bssFinal.append("    .align 3\n");                                // ← alinear a 8 bytes
             bssFinal.append("    heap:       .space ").append(tamanoHeap).append("\n");
             bssFinal.append("    .align 3\n");                                // ← alinear heap_ptr
-            bssFinal.append("    heap_ptr:   .word 0\n");
+            bssFinal.append("    heap_ptr:   .dword 0\n");
         }
 // RARS no soporta .bss; usar .data para heap y buffers.
         if (bssFinal.length() > 0) {
@@ -397,6 +397,7 @@ public class EmisorRiscV {
             case "textum" -> linea("la   %s, %s", registro, etiquetaCadena(String.valueOf(valor)));
             case "decimalis" -> throw new UnsupportedOperationException(
                     "EmisorRiscV: literales decimalis no soportados");
+            case "null" -> linea("li   %s, 0", registro);
             default -> throw new IllegalArgumentException("Tipo literal: " + l.getTipo());
         }
     }

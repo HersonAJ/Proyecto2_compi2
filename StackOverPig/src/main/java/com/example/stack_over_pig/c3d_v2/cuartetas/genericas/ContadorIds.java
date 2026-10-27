@@ -93,12 +93,22 @@ public class ContadorIds {
     }
 
     // ===== Etiquetas =====
+    // El contador de etiquetas es GLOBAL a toda la compilación RISC-V: cada
+    // GestorCodigoIntermedio crea su propio ContadorIds (uno por función),
+    // pero las etiquetas L0, L1, ... deben ser únicas en todo el .s emitido.
+    // Por eso se guarda en un campo estático y ServicioCompilacionPig lo
+    // reinicia al comenzar cada compilación (ver reiniciarEtiquetasGlobales).
+    private static int contadorEtiquetasGlobal = 0;
+
+    public static void reiniciarEtiquetasGlobales() {
+        contadorEtiquetasGlobal = 0;
+    }
 
     public int siguienteEtiqueta() {
-        return contadorEtiquetas++;
+        return contadorEtiquetasGlobal++;
     }
 
     public int getTotalEtiquetas() {
-        return contadorEtiquetas;
+        return contadorEtiquetasGlobal;
     }
 }

@@ -32,6 +32,8 @@ final class RutinasConsola {
     static final String LEER_CADENA = "__leer_cadena";
     static final String CONCAT = "__concat";
     static final String Z_TO_STRING_INT = "__z_to_string_int";
+    static final String Z_TO_STRING_CHAR = "__z_to_string_char";
+    static final String Z_TO_STRING_BOOL = "__z_to_string_bool";
 
     private static final Map<String, String> CODIGO = Map.of(
 
@@ -331,6 +333,56 @@ final class RutinasConsola {
                         addi sp, sp, 64
                         ret
                     """
+            ,
+            Z_TO_STRING_CHAR, """
+        # a1 = código de carácter. Devuelve en a0 un string nuevo (en el heap) de 1 carácter.
+        __z_to_string_char:
+            la   t5, heap_ptr
+            ld   t4, 0(t5)
+            addi t3, t4, 8
+            sd   t3, 0(t5)
+            la   t6, heap
+            add  a0, t6, t4
+            sb   a1, 0(a0)
+            sb   zero, 1(a0)
+            ret
+        """,
+
+            Z_TO_STRING_BOOL, """
+        # a1 = 0 o 1. Devuelve en a0 un string nuevo (en el heap): "true" o "false".
+        __z_to_string_bool:
+            la   t5, heap_ptr
+            ld   t4, 0(t5)
+            addi t3, t4, 8
+            sd   t3, 0(t5)
+            la   t6, heap
+            add  a0, t6, t4
+            beq  a1, zero, __ztsb_falso
+            li   t0, 116
+            sb   t0, 0(a0)
+            li   t0, 114
+            sb   t0, 1(a0)
+            li   t0, 117
+            sb   t0, 2(a0)
+            li   t0, 101
+            sb   t0, 3(a0)
+            sb   zero, 4(a0)
+            ret
+        __ztsb_falso:
+            li   t0, 102
+            sb   t0, 0(a0)
+            li   t0, 97
+            sb   t0, 1(a0)
+            li   t0, 108
+            sb   t0, 2(a0)
+            li   t0, 115
+            sb   t0, 3(a0)
+            li   t0, 101
+            sb   t0, 4(a0)
+            sb   zero, 5(a0)
+            ret
+        """
+
     );
 
     /**

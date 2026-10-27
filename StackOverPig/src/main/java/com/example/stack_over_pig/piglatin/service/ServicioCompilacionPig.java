@@ -1,5 +1,6 @@
 package com.example.stack_over_pig.piglatin.service;
 
+import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.ContadorIds;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.Cuarteta;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.GestorCodigoIntermedio;
 import com.example.stack_over_pig.piglatin.builder.ASTBuilderPig;
@@ -74,6 +75,7 @@ public class ServicioCompilacionPig {
         }
 
         try {
+            ContadorIds.reiniciarEtiquetasGlobales();
             TablaSimbolosPig tabla = ultimoValidador.getTabla();
 
             // 1. Cuartetas del .pig (main)
