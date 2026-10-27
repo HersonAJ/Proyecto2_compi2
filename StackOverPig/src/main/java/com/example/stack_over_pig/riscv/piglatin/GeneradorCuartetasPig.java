@@ -6,6 +6,8 @@ import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.AsignacionAtributo
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Continuar1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Romper1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.AccesoAtributo1;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.LlamadaMetodo1;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.NewObjeto;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 import com.example.stack_over_pig.piglatin.nodo.NodoExpr;
 import com.example.stack_over_pig.piglatin.nodo.NodoSentencia;
@@ -45,8 +47,11 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
 
     @Override
     public void visitar(NodoSentencia.DeclaracionVariable d) {
+        boolean esEstructura = tabla.buscarEstructura(d.tipo()).isPresent();
+        boolean esObjeto = tabla.buscarClase(d.tipo()).isPresent();
+
         int offset = tabla.asignarOffsetVariable(d.nombre());
-        if (!tabla.declararVariable(d.nombre(), d.tipo(), 0, null, false, false, d.tipo(), offset)) {
+        if (!tabla.declararVariable(d.nombre(), d.tipo(), 0, null, esEstructura, esObjeto, d.tipo(), offset)) {
             tabla.actualizarOffsetVariable(d.nombre(), offset);
         }
 
@@ -386,12 +391,24 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
                     .orElse("numerus");
         }
         if (expr instanceof NodoExpr.AccesoAtributo aa && aa.objeto() instanceof NodoExpr.Identificador id) {
-            return tabla.buscarVariable(id.nombre())
-                    .flatMap(v -> tabla.buscarEstructura(v.tipo()))
-                    .map(est -> est.atributos().get(aa.atributo()))
-                    .orElse("numerus");
+            var varOpt = tabla.buscarVariable(id.nombre());
+            if (varOpt.isPresent()) {
+                String tipoVar = varOpt.get().tipo();
+                // 1. Buscar en estructuras.
+                var estOpt = tabla.buscarEstructura(tipoVar);
+                if (estOpt.isPresent()) {
+                    String t = estOpt.get().atributos().get(aa.atributo());
+                    if (t != null) return t;
+                }
+                // 2. Buscar en clases.
+                var claseOpt = tabla.buscarClase(tipoVar);
+                if (claseOpt.isPresent()) {
+                    var attr = claseOpt.get().atributos().get(aa.atributo());
+                    if (attr != null) return attr.tipo();
+                }
+            }
+            return "numerus";
         }
-
         return "numerus";
     }
 
@@ -488,5 +505,92 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         } else {
             gestor.emitir(new AsignacionVariable(destino, valor));
         }
+    }
+
+    // ========== OBJETOS ==========
+
+    @Override
+    public void visitar(NodoExpr.InstanciaObjeto inst) {
+        // 1. Evaluar argumentos.
+        List<AccesoMemoria> args = new ArrayList<>();
+        List<String> tiposArgs = new ArrayList<>();
+        for (NodoExpr arg : inst.argumentos()) {
+            arg.aceptar(this);
+            args.add(ultimoResultado);
+            tiposArgs.add(tipoPigLatinDe(arg));
+        }
+
+        // 2. Nombre RISC-V del constructor: Clase_constructor_<tipos>.
+        StringBuilder nombre = new StringBuilder(inst.tipoClase()).append("_constructor");
+        for (String t : tiposArgs) nombre.append('_').append(t);
+
+        // 3. Temporal para el objeto.
+        int idT = gestor.getContador().siguienteTemporal(inst.tipoClase());
+        AccesoTemporal t = new AccesoTemporal(idT, inst.tipoClase());
+
+        // 4. Emitir NewObjeto.
+        gestor.emitir(new NewObjeto(t, inst.tipoClase(), nombre.toString(), args));
+        ultimoResultado = t;
+    }
+
+    @Override
+    public void visitar(NodoExpr.LlamadaMetodo llamada) {
+        // 1. Evaluar receptor.
+        llamada.objeto().aceptar(this);
+        AccesoMemoria receptor = ultimoResultado;
+        String tipoObj = tipoPigLatinDe(llamada.objeto());
+
+        // 2. Evaluar argumentos.
+        List<AccesoMemoria> args = new ArrayList<>();
+        List<String> tiposArgs = new ArrayList<>();
+        for (NodoExpr arg : llamada.argumentos()) {
+            arg.aceptar(this);
+            args.add(ultimoResultado);
+            tiposArgs.add(tipoPigLatinDe(arg));
+        }
+
+        // 3. Resolver sobrecarga en la tabla de clases.
+        var defClase = tabla.buscarClase(tipoObj);
+        if (defClase.isEmpty()) {
+            throw new IllegalStateException(
+                    "GeneradorCuartetasPig: clase no encontrada: " + tipoObj);
+        }
+        TablaSimbolosPig.Firma firma = null;
+        for (var f : defClase.get().metodos().stream()
+                .filter(f -> f.nombre().equals(llamada.nombre())).toList()) {
+            if (f.parametros().size() == tiposArgs.size()) {
+                boolean coincide = true;
+                for (int i = 0; i < tiposArgs.size(); i++) {
+                    if (!f.parametros().get(i).tipo().equals(tiposArgs.get(i))) {
+                        coincide = false;
+                        break;
+                    }
+                }
+                if (coincide) { firma = f; break; }
+            }
+        }
+        if (firma == null) {
+            throw new IllegalStateException(
+                    "GeneradorCuartetasPig: método no encontrado: " + llamada.nombre() + " en " + tipoObj);
+        }
+
+        // 4. Nombre RISC-V: Clase_metodo_<tipos>.
+        StringBuilder nombreRiscV = new StringBuilder(tipoObj).append('_').append(llamada.nombre());
+        for (String t : tiposArgs) nombreRiscV.append('_').append(t);
+
+        // 5. Temporal para el retorno.
+        int idT = gestor.getContador().siguienteTemporal(
+                firma.tipoRetorno() != null ? firma.tipoRetorno() : "void");
+        AccesoTemporal t = new AccesoTemporal(idT,
+                firma.tipoRetorno() != null ? firma.tipoRetorno() : "void");
+
+        // 6. Emitir LlamadaMetodo1.
+        gestor.emitir(new LlamadaMetodo1(t, receptor, nombreRiscV.toString(), args));
+        ultimoResultado = firma.tipoRetorno() != null ? t : null;
+    }
+
+    @Override
+    public void visitar(NodoSentencia.LlamadaMetodoSentencia l) {
+        l.llamada().aceptar(this);
     }
 }

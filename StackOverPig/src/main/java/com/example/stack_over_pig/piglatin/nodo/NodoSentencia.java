@@ -120,6 +120,6 @@ public sealed interface NodoSentencia extends NodoAST permits
 
     record LlamadaMetodoSentencia(int linea, int columna, NodoExpr.LlamadaMetodo llamada) implements NodoSentencia {
         @Override public TipoNodoSentencia tipoNodo() { return TipoNodoSentencia.LLAMADA_METODO_SENTENCIA; }
-        @Override public void aceptar(VisitanteGeneradorCuartetas v) { /* Fase 3 */ }
+        @Override public void aceptar(VisitanteGeneradorCuartetas v) { v.visitar(this); }
     }
 }

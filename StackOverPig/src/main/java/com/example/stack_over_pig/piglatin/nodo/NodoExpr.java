@@ -110,7 +110,7 @@ public sealed interface NodoExpr extends NodoAST permits
     record LlamadaMetodo(int linea, int columna, NodoExpr objeto,
                          String nombre, List<NodoExpr> argumentos) implements NodoExpr {
         @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.LLAMADA_METODO; }
-        @Override public void aceptar(VisitanteGeneradorCuartetas v) { /* Fase 3 */ }
+        @Override public void aceptar(VisitanteGeneradorCuartetas v) { v.visitar(this); }
     }
 
     record InstanciaObjeto(int linea, int columna, String tipoClase,
@@ -119,6 +119,6 @@ public sealed interface NodoExpr extends NodoAST permits
             this(linea, columna, tipoClase, argumentos, null);
         }
         @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.INSTANCIA_OBJETO; }
-        @Override public void aceptar(VisitanteGeneradorCuartetas v) { /* Fase 3 */ }
+        @Override public void aceptar(VisitanteGeneradorCuartetas v) { v.visitar(this); }
     }
 }

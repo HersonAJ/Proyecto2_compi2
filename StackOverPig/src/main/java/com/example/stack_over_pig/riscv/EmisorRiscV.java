@@ -5,6 +5,8 @@ import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.AsignacionAtributo
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Continuar1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Romper1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.AccesoAtributo1;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.LlamadaMetodo1;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.NewObjeto;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.*;
 import com.example.stack_over_pig.piglatin.semantica.TablaSimbolosPig;
@@ -13,107 +15,96 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
- * Recorre las cuartetas y emite ensamblador RISC-V (RV64) siguiendo el esquema visto en clase:
- * <p>
- * 0(fp)    s0 anterior          (fp = s0)
- * -8(fp)    ra
- * -16(fp)    primera variable local, luego las demás y los temporales del C3D (8 bytes por slot)
- * <p>
- * - odo vive en la pila con offsets negativos respecto a fp. Cada cuarteta carga de la pila a
- * registros, opera y vuelve a guardar, así que ningún valor sobrevive entre cuartetas.
- * - Registros fijos (sin pool cíclico): t0 izquierda, t1 derecha, t2 resultado, t3/t4 direcciones
- * de arreglos, t6 solo para offsets fuera del rango de 12 bits.
- * - Memoria estática: el marco se calcula una sola vez; no hay malloc ni alloca.
- * - Entrada/salida sin librerías de C: ver {@link RutinasConsola} (ecall de Linux).
- * - Los offsets de variables los asigna el GeneradorCuartetasPig en la TablaSimbolosPig; los de los
- * temporales se piden aquí a la tabla cuando se usan por primera vez.
+ * Emite el programa RISC-V completo: _start, main (Pig) y funciones de Zetariano.
+ * Usa ContextoEmision para compartir estado con EmisorRiscVZ.
  */
 public class EmisorRiscV {
 
-    // ---------- registros fijos ----------
     private static final String IZQ = "t0";
     private static final String DER = "t1";
     private static final String RES = "t2";
-    private static final String DIR = "t3";   // dirección calculada de un elemento de arreglo
-    private static final String IDX = "t4";   // índice al guardar en un arreglo
-    private static final String AUX = "t6";   // solo para offsets que no caben en 12 bits
+    private static final String DIR = "t3";
+    private static final String IDX = "t4";
+    private static final String AUX = "t6";
 
-    /**
-     * false: ramas directas como en clase (beq/bne/blt/bge, alcance de +-4 KB).
-     * true:  rama inversa + j, para programas muy grandes (alcance de +-1 MB).
-     * Cambiar a true si el ensamblador se queja de "relocation truncated" en una rama.
-     */
     private static final boolean RAMAS_LARGAS = false;
-
-    /**
-     * true: al empezar, imprime en la consola (System.out) la lista numerada de cuartetas recibidas, aunque luego falle.
-     */
     private static final boolean IMPRIMIR_CUARTETAS_EN_CONSOLA = true;
-
-    /**
-     * true: antes de cada cuarteta se escribe un comentario con su descripción (útil para comparar con el C3D).
-     */
     private static final boolean COMENTAR_CUARTETAS = true;
 
-    private static final int BYTES_SLOT = 8;     // RV64: odo slot es de 8 bytes
+    private static final int BYTES_SLOT = 8;
     private static final int CAPACIDAD_LECTURA_TEXTO = 256;
 
-    private final StringBuilder data = new StringBuilder();   // cadenas literales
-    private final StringBuilder bss = new StringBuilder();    // buffers para leer texto
-    private final StringBuilder text = new StringBuilder();   // cuerpo de main
-
     private final TablaSimbolosPig tabla;
+    private final int tamanoHeap;
+    private ContextoEmision ctx;
 
-    private final Map<String, String> cadenas = new LinkedHashMap<>();   // texto escapado -> etiqueta
-    private final Set<String> rutinasUsadas = new LinkedHashSet<>();
-    private int contadorBuffers = 0;
-    private int contadorSaltos = 0;
-
-    public EmisorRiscV(TablaSimbolosPig tabla) {
+    public EmisorRiscV(TablaSimbolosPig tabla, int tamanoHeap) {
         this.tabla = tabla;
+        this.tamanoHeap = tamanoHeap;
     }
 
-    private record Ubicacion(int offset, String nombre) {
+    // Compatibilidad: si alguien llama con un solo argumento, heap = 0.
+    public EmisorRiscV(TablaSimbolosPig tabla) {
+        this(tabla, 0);
     }
 
-    // =====================================================================
-    //  PROGRAMA COMPLETO
-    // =====================================================================
+    private record Ubicacion(int offset, String nombre) {}
 
-    public String emitir(List<Cuarteta> cuartetas) {
+    public String emitir(List<Cuarteta> main, List<FuncionRiscV> funciones) {
+        ctx = new ContextoEmision(tabla, tamanoHeap);
+
+        // 1. Emitir main.
         if (IMPRIMIR_CUARTETAS_EN_CONSOLA) {
-            System.out.println("===== CUARTETAS RECIBIDAS POR EmisorRiscV (" + cuartetas.size() + ") =====");
+            System.out.println("===== CUARTETAS MAIN (" + main.size() + ") =====");
             int k = 0;
-            for (Cuarteta c : cuartetas) {
-                System.out.println("[" + (++k) + "] " + describir(c));
-            }
-            System.out.println("===== FIN DE CUARTETAS =====");
+            for (Cuarteta c : main) System.out.println("[" + (++k) + "] " + describir(c));
+            System.out.println("===== FIN CUARTETAS MAIN =====");
         }
 
         int numero = 0;
-        for (Cuarteta c : cuartetas) {
+        for (Cuarteta c : main) {
             numero++;
             if (COMENTAR_CUARTETAS) {
-                text.append("    # [").append(numero).append("] ").append(describir(c)).append("\n");
+                ctx.getText().append("    # [").append(numero).append("] ").append(describir(c)).append("\n");
             }
             try {
                 emitirCuarteta(c);
             } catch (RuntimeException e) {
-                throw new IllegalStateException("EmisorRiscV: falló en la cuarteta #" + numero
+                throw new IllegalStateException("EmisorRiscV: falló cuarteta #" + numero
                         + " -> " + describir(c) + " | " + e.getMessage(), e);
             }
         }
 
-        // El marco se conoce hasta aquí: ya se pidieron los slots de todos los temporales.
         int framesize = ((tabla.getSiguienteOffset() + 15) / 16) * 16;
 
-        StringBuilder out = new StringBuilder();
-        out.append("# Generado por stack_over_pig - RISC-V RV64, ecall con el ABI de Linux (write=64, read=63, exit=93)\n");
-        if (data.length() > 0) {
-            out.append(".data\n").append(data).append("\n");
+        // 2. Emitir funciones de Z.
+        EmisorRiscVZ emisorZ = new EmisorRiscVZ(ctx);
+        for (FuncionRiscV f : funciones) {
+            emisorZ.emitirFuncion(f);
         }
-        if (bss.length() > 0) {
-            out.append(".bss\n").append(bss).append("\n");
+
+        // 3. Ensamblar el .s completo.
+        StringBuilder out = new StringBuilder();
+        out.append("# Generado por stack_over_pig - RISC-V RV64 (write=64, read=63, exit=93)\n");
+
+        if (ctx.getData().length() > 0) {
+            out.append(".data\n").append(ctx.getData()).append("\n");
+        }
+
+        // .bss: buffers de lectura + heap estático (si hay objetos)
+        StringBuilder bssFinal = new StringBuilder(ctx.getBss());
+        if (tamanoHeap > 0) {
+            bssFinal.append("    .align 3\n");                                // ← alinear a 8 bytes
+            bssFinal.append("    heap:       .space ").append(tamanoHeap).append("\n");
+            bssFinal.append("    .align 3\n");                                // ← alinear heap_ptr
+            bssFinal.append("    heap_ptr:   .word 0\n");
+        }
+// RARS no soporta .bss; usar .data para heap y buffers.
+        if (bssFinal.length() > 0) {
+            if (ctx.getData().length() == 0) {
+                out.append(".data\n");
+            }
+            out.append(bssFinal).append("\n");
         }
 
         out.append(".text\n");
@@ -126,15 +117,22 @@ public class EmisorRiscV {
 
         out.append("main:\n");
         out.append(prologo(framesize)).append("\n");
-        out.append(text);
+        out.append(ctx.getText());
         out.append("__epilogo_main:\n");
         out.append(epilogo(framesize));
 
-        if (!rutinasUsadas.isEmpty()) {
+        out.append(ctx.getFunciones());
+
+        if (!ctx.getRutinasUsadas().isEmpty()) {
             out.append("\n# ---------- rutinas de entrada/salida ----------\n");
-            out.append(RutinasConsola.generar(rutinasUsadas));
+            out.append(RutinasConsola.generar(ctx.getRutinasUsadas()));
         }
         return out.toString();
+    }
+
+    // Compatibilidad con llamadas anteriores.
+    public String emitir(List<Cuarteta> cuartetas) {
+        return emitir(cuartetas, List.of());
     }
 
     private static String prologo(int framesize) {
@@ -145,7 +143,6 @@ public class EmisorRiscV {
             sb.append("    sd   ra, ").append(framesize - 16).append("(sp)\n");
             sb.append("    addi s0, sp, ").append(framesize - 8).append("\n");
         } else {
-            // marco grande: los inmediatos de 12 bits no alcanzan
             sb.append("    li   t0, ").append(framesize).append("\n");
             sb.append("    sub  sp, sp, t0\n");
             sb.append("    add  t0, sp, t0\n");
@@ -170,9 +167,7 @@ public class EmisorRiscV {
         return sb.toString();
     }
 
-    // =====================================================================
-    //  CUARTETAS
-    // =====================================================================
+    // ========== CUARTETAS ==========
 
     private void emitirCuarteta(Cuarteta c) {
         if (c instanceof AsignacionArreglo a) emitirAsignacionArreglo(a);
@@ -184,6 +179,8 @@ public class EmisorRiscV {
         else if (c instanceof Salto s) emitirSalto(s.getEtiqueta());
         else if (c instanceof DefinicionEtiqueta e) etiqueta("L" + e.getEtiqueta());
         else if (c instanceof Llamada l) emitirLlamada(l);
+        else if (c instanceof NewObjeto n) emitirNewObjeto(n);          // ← nuevo
+        else if (c instanceof LlamadaMetodo1 lm) emitirLlamadaMetodo(lm); // ← nuevo
         else if (c instanceof Retorno1 r) emitirRetorno(r);
         else if (c instanceof ConversionTipo ct) emitirConversion(ct);
         else if (c instanceof ImprimirPig i) emitirImprimir(i);
@@ -207,7 +204,6 @@ public class EmisorRiscV {
     private void emitirOperacion(OperacionBinaria o) {
         cargar(o.getIzquierda(), IZQ);
         cargar(o.getDerecha(), DER);
-
         switch (o.getOperador()) {
             case "+" -> linea("add  %s, %s, %s", RES, IZQ, DER);
             case "-" -> linea("sub  %s, %s, %s", RES, IZQ, DER);
@@ -216,33 +212,17 @@ public class EmisorRiscV {
             case "%" -> linea("rem  %s, %s, %s", RES, IZQ, DER);
             case "<" -> linea("slt  %s, %s, %s", RES, IZQ, DER);
             case ">" -> linea("slt  %s, %s, %s", RES, DER, IZQ);
-            case "<=" -> {                                    // a <= b  ==  !(b < a)
-                linea("slt  %s, %s, %s", RES, DER, IZQ);
-                linea("xori %s, %s, 1", RES, RES);
-            }
-            case ">=" -> {                                    // a >= b  ==  !(a < b)
-                linea("slt  %s, %s, %s", RES, IZQ, DER);
-                linea("xori %s, %s, 1", RES, RES);
-            }
-            case "==" -> {                                    // a == b  ==  (a - b) == 0
-                linea("sub  %s, %s, %s", RES, IZQ, DER);
-                linea("sltiu %s, %s, 1", RES, RES);
-            }
-            case "!=" -> {
-                linea("sub  %s, %s, %s", RES, IZQ, DER);
-                linea("sltu %s, zero, %s", RES, RES);
-            }
-            case "&&" -> {                                    // normaliza a 0/1 antes de combinar
+            case "<=" -> { linea("slt  %s, %s, %s", RES, DER, IZQ); linea("xori %s, %s, 1", RES, RES); }
+            case ">=" -> { linea("slt  %s, %s, %s", RES, IZQ, DER); linea("xori %s, %s, 1", RES, RES); }
+            case "==" -> { linea("sub  %s, %s, %s", RES, IZQ, DER); linea("sltiu %s, %s, 1", RES, RES); }
+            case "!=" -> { linea("sub  %s, %s, %s", RES, IZQ, DER); linea("sltu %s, zero, %s", RES, RES); }
+            case "&&" -> {
                 linea("sltu %s, zero, %s", IZQ, IZQ);
                 linea("sltu %s, zero, %s", DER, DER);
                 linea("and  %s, %s, %s", RES, IZQ, DER);
             }
-            case "||" -> {
-                linea("or   %s, %s, %s", RES, IZQ, DER);
-                linea("sltu %s, zero, %s", RES, RES);
-            }
-            default -> throw new UnsupportedOperationException(
-                    "EmisorRiscV: operador binario no soportado: " + o.getOperador());
+            case "||" -> { linea("or   %s, %s, %s", RES, IZQ, DER); linea("sltu %s, zero, %s", RES, RES); }
+            default -> throw new UnsupportedOperationException("Operador: " + o.getOperador());
         }
         almacenar(RES, o.getDestino());
     }
@@ -253,8 +233,7 @@ public class EmisorRiscV {
             case "-" -> linea("sub  %s, zero, %s", RES, IZQ);
             case "!" -> linea("sltiu %s, %s, 1", RES, IZQ);
             case "+" -> linea("mv   %s, %s", RES, IZQ);
-            default -> throw new UnsupportedOperationException(
-                    "EmisorRiscV: operador unario no soportado: " + o.getOperador());
+            default -> throw new UnsupportedOperationException("Unario: " + o.getOperador());
         }
         almacenar(RES, o.getDestino());
     }
@@ -263,8 +242,6 @@ public class EmisorRiscV {
         cargar(c.getIzquierda(), IZQ);
         cargar(c.getDerecha(), DER);
         String destino = "L" + c.getEtiqueta();
-
-        // Solo se usan beq/bne/blt/bge (reales en cualquier ensamblador); > y <= invierten operandos.
         switch (c.getOperador()) {
             case "==" -> rama("beq", IZQ, DER, destino);
             case "!=" -> rama("bne", IZQ, DER, destino);
@@ -272,73 +249,57 @@ public class EmisorRiscV {
             case ">=" -> rama("bge", IZQ, DER, destino);
             case ">" -> rama("blt", DER, IZQ, destino);
             case "<=" -> rama("bge", DER, IZQ, destino);
-            default -> throw new UnsupportedOperationException(
-                    "EmisorRiscV: comparador no soportado: " + c.getOperador());
+            default -> throw new UnsupportedOperationException("Comparador: " + c.getOperador());
         }
     }
 
-    private void rama(String instruccion, String r1, String r2, String destino) {
+    private void rama(String instr, String r1, String r2, String destino) {
         if (!RAMAS_LARGAS) {
-            linea("%s  %s, %s, %s", instruccion, r1, r2, destino);
+            linea("%s  %s, %s, %s", instr, r1, r2, destino);
             return;
         }
-        String inversa = switch (instruccion) {
+        String inv = switch (instr) {
             case "beq" -> "bne";
             case "bne" -> "beq";
             case "blt" -> "bge";
-            default -> "blt";   // bge
+            default -> "blt";
         };
-        String salto = "__salto_" + (contadorSaltos++);
-        linea("%s  %s, %s, %s", inversa, r1, r2, salto);
+        String salto = "__salto_" + (ctx.siguienteSalto());
+        linea("%s  %s, %s, %s", inv, r1, r2, salto);
         linea("j    %s", destino);
         etiqueta(salto);
     }
 
-    private void emitirSalto(int etiqueta) {
-        linea("j    L%d", etiqueta);
-    }
+    private void emitirSalto(int etiqueta) { linea("j    L%d", etiqueta); }
 
     private void emitirLlamada(Llamada l) {
         List<AccesoMemoria> args = l.getArgumentos();
-        if (args.size() > 8) {
-            throw new UnsupportedOperationException(
-                    "EmisorRiscV: más de 8 argumentos (los demás van a la pila) todavía no está implementado");
-        }
-        for (int i = 0; i < args.size(); i++) {
-            cargar(args.get(i), "a" + i);
-        }
+        for (int i = 0; i < args.size(); i++) cargar(args.get(i), "a" + i);
         linea("jal  ra, %s", l.getNombreFuncion());
-        if (l.getDestino() != null) {
-            almacenar("a0", l.getDestino());
-        }
+        if (l.getDestino() != null) almacenar("a0", l.getDestino());
     }
 
     private void emitirRetorno(Retorno1 r) {
-        if (r.getValor() != null) {
-            cargar(r.getValor(), "a0");
-        }
+        if (r.getValor() != null) cargar(r.getValor(), "a0");
         linea("j    __epilogo_main");
     }
 
     private void emitirConversion(ConversionTipo c) {
-        // : conversiones con punto flotante (fcvt.*). Por ahora solo enteros: copia directa.
         cargar(c.getFuente(), IZQ);
         almacenar(IZQ, c.getDestino());
     }
 
-    // =====================================================================
-    //  ENTRADA / SALIDA
-    // =====================================================================
+    // ========== E/S ==========
 
     private void emitirImprimir(ImprimirPig i) {
         String rutina = switch (i.getTipo()) {
             case "textum" -> RutinasConsola.IMPRIMIR_CADENA;
             case "littera" -> RutinasConsola.IMPRIMIR_CARACTER;
             case "decimalis" -> throw new UnsupportedOperationException(
-                    "EmisorRiscV: escribir decimalis todavía no está implementado (punto flotante)");
-            default -> RutinasConsola.IMPRIMIR_ENTERO;      // numerus y bool
+                    "EmisorRiscV: decimalis no soportado (punto flotante)");
+            default -> RutinasConsola.IMPRIMIR_ENTERO;
         };
-        rutinasUsadas.add(rutina);
+        ctx.getRutinasUsadas().add(rutina);
         cargar(i.getValor(), "a0");
         linea("jal  ra, %s", rutina);
     }
@@ -346,11 +307,9 @@ public class EmisorRiscV {
     private void emitirLeer(LeerPig l) {
         switch (l.getTipo()) {
             case "textum" -> {
-                // Memoria estática: cada lectura de texto tiene su propio buffer en .bss;
-                // la variable guarda la dirección de ese buffer.
-                String buffer = "buf_lectura_" + (contadorBuffers++);
-                bss.append("    ").append(buffer).append(": .space ").append(CAPACIDAD_LECTURA_TEXTO).append("\n");
-                rutinasUsadas.add(RutinasConsola.LEER_CADENA);
+                String buffer = "buf_lectura_" + ctx.siguienteBuffer();
+                ctx.getBss().append("    ").append(buffer).append(": .space ").append(CAPACIDAD_LECTURA_TEXTO).append("\n");
+                ctx.getRutinasUsadas().add(RutinasConsola.LEER_CADENA);
                 linea("la   a0, %s", buffer);
                 linea("li   a1, %d", CAPACIDAD_LECTURA_TEXTO);
                 linea("jal  ra, %s", RutinasConsola.LEER_CADENA);
@@ -358,39 +317,29 @@ public class EmisorRiscV {
                 almacenar(IZQ, l.getDestino());
             }
             case "littera" -> {
-                rutinasUsadas.add(RutinasConsola.LEER_CARACTER);
+                ctx.getRutinasUsadas().add(RutinasConsola.LEER_CARACTER);
                 linea("jal  ra, %s", RutinasConsola.LEER_CARACTER);
                 almacenar("a0", l.getDestino());
             }
             case "decimalis" -> throw new UnsupportedOperationException(
-                    "EmisorRiscV: leer decimalis todavía no está implementado (punto flotante)");
-            default -> {                                     // numerus y bool
-                rutinasUsadas.add(RutinasConsola.LEER_ENTERO);
+                    "EmisorRiscV: decimalis no soportado");
+            default -> {
+                ctx.getRutinasUsadas().add(RutinasConsola.LEER_ENTERO);
                 linea("jal  ra, %s", RutinasConsola.LEER_ENTERO);
                 almacenar("a0", l.getDestino());
             }
         }
     }
 
-    // =====================================================================
-    //  CARGAR / GUARDAR
-    // =====================================================================
+    // ========== CARGAR / GUARDAR ==========
 
-    /**
-     * Deja el valor de 'acc' en 'registro'. Solo toca 'registro' y los auxiliares DIR/AUX.
-     */
     private void cargar(AccesoMemoria acc, String registro) {
-
         if (acc instanceof Literal l) {
             cargarLiteral(l, registro);
-        }
-     else if (acc instanceof AccesoAtributo1 attr) {
-        direccionCampo(attr.getBase(), attr.getCampo(), DIR);
-        linea("ld   %s, 0(%s)", registro, DIR);
-    }
-
-        else if (acc instanceof AccesoArreglo arr) {
-            // elemento = *(base + indice * 8). El índice se evalúa primero, en el mismo registro destino.
+        } else if (acc instanceof AccesoAtributo1 attr) {
+            direccionCampo(attr.getBase(), attr.getCampo(), DIR);
+            linea("ld   %s, 0(%s)", registro, DIR);
+        } else if (acc instanceof AccesoArreglo arr) {
             cargar(arr.getIndice(), registro);
             direccionBase(arr.getBase(), DIR);
             linea("slli %s, %s, 3", registro, registro);
@@ -413,27 +362,23 @@ public class EmisorRiscV {
         }
     }
 
-    private void almacenarEnArreglo(String registroValor, AccesoMemoria base, AccesoMemoria indice) {
+    private void almacenarEnArreglo(String regValor, AccesoMemoria base, AccesoMemoria indice) {
         cargar(indice, IDX);
         direccionBase(base, DIR);
         linea("slli %s, %s, 3", IDX, IDX);
         linea("add  %s, %s, %s", DIR, DIR, IDX);
-        linea("sd   %s, 0(%s)", registroValor, DIR);
+        linea("sd   %s, 0(%s)", regValor, DIR);
     }
 
-    /**
-     * Deja en 'registro' la dirección del elemento 0 del arreglo.
-     * Un arreglo local ocupa slots consecutivos hacia arriba desde su offset (fp + offset).
-     */
     private void direccionBase(AccesoMemoria base, String registro) {
         if (!(base instanceof AccesoVariable v)) {
             throw new UnsupportedOperationException(
-                    "EmisorRiscV: la base de un arreglo debe ser una variable (arreglos multidimensionales pendientes)");
+                    "EmisorRiscV: base de arreglo debe ser variable");
         }
         TablaSimbolosPig.SimboloVariable s = simbolo(v);
         if (s.dimensiones() == 0) {
             throw new UnsupportedOperationException(
-                    "EmisorRiscV: '" + v.getNombre() + "' no es un arreglo");
+                    "EmisorRiscV: '" + v.getNombre() + "' no es arreglo");
         }
         if (cabe(s.offset())) {
             linea("addi %s, s0, %d   # &%s[0]", registro, s.offset(), v.getNombre());
@@ -451,72 +396,55 @@ public class EmisorRiscV {
             case "littera" -> linea("li   %s, %d", registro, codigoCaracter(valor));
             case "textum" -> linea("la   %s, %s", registro, etiquetaCadena(String.valueOf(valor)));
             case "decimalis" -> throw new UnsupportedOperationException(
-                    "EmisorRiscV: literales decimalis todavía no están implementados (punto flotante)");
-            default -> throw new IllegalArgumentException(
-                    "EmisorRiscV: tipo de literal desconocido: " + l.getTipo());
+                    "EmisorRiscV: literales decimalis no soportados");
+            default -> throw new IllegalArgumentException("Tipo literal: " + l.getTipo());
         }
     }
-
-    // ---------- ubicación en la pila ----------
 
     private Ubicacion ubicar(AccesoMemoria acc) {
         if (acc instanceof AccesoVariable v) {
             return new Ubicacion(simbolo(v).offset(), v.getNombre());
         }
         if (acc instanceof AccesoTemporal t) {
-            // asignarOffsetTemporal es idempotente: crea el slot la primera vez y lo reutiliza después
             return new Ubicacion(tabla.asignarOffsetTemporal(t.getNumero()), "t" + t.getNumero());
         }
-        throw new IllegalStateException("EmisorRiscV: no se puede ubicar en la pila: " + describir(acc));
+        throw new IllegalStateException("EmisorRiscV: no ubicable: " + describir(acc));
     }
 
     private TablaSimbolosPig.SimboloVariable simbolo(AccesoVariable v) {
         TablaSimbolosPig.SimboloVariable s = tabla.buscarVariable(v.getNombre())
                 .orElseThrow(() -> new IllegalStateException(
-                        "EmisorRiscV: la variable '" + v.getNombre() + "' no está en la tabla de símbolos"));
-        // Los locales empiezan en -16(fp); 0 o positivo significa que nadie le asignó posición.
+                        "EmisorRiscV: variable '" + v.getNombre() + "' no en tabla"));
         if (s.offset() > -16) {
             throw new IllegalStateException(
-                    "EmisorRiscV: la variable '" + v.getNombre() + "' tiene offset " + s.offset()
-                            + " (no se le asignó posición en la pila; revisar la declaración en GeneradorCuartetasPig)");
+                    "EmisorRiscV: '" + v.getNombre() + "' offset " + s.offset()
+                            + " (no se le asignó posición en la pila)");
         }
         return s;
     }
 
-    private static boolean cabe(int offset) {
-        return offset >= -2048 && offset <= 2047;
-    }
+    private static boolean cabe(int offset) { return offset >= -2048 && offset <= 2047; }
 
-    /**
-     * ld / sd contra la pila; si el offset no cabe en 12 bits calcula la dirección en AUX.
-     */
-    private void accesoPila(String instruccion, String registro, Ubicacion u) {
+    private void accesoPila(String instr, String registro, Ubicacion u) {
         if (cabe(u.offset())) {
-            linea("%s   %s, %d(s0)   # %s", instruccion, registro, u.offset(), u.nombre());
+            linea("%s   %s, %d(s0)   # %s", instr, registro, u.offset(), u.nombre());
         } else {
             linea("li   %s, %d", AUX, u.offset());
             linea("add  %s, s0, %s", AUX, AUX);
-            linea("%s   %s, 0(%s)   # %s", instruccion, registro, AUX, u.nombre());
+            linea("%s   %s, 0(%s)   # %s", instr, registro, AUX, u.nombre());
         }
     }
 
-    // ---------- literales ----------
-
     private String etiquetaCadena(String valor) {
-        String escapada = escaparCadena(valor);
-        String existente = cadenas.get(escapada);
+        String esc = escaparCadena(valor);
+        String existente = ctx.getCadenas().get(esc);
         if (existente != null) return existente;
-        String etiqueta = "str_" + cadenas.size();
-        cadenas.put(escapada, etiqueta);
-        data.append("    ").append(etiqueta).append(": .string \"").append(escapada).append("\"\n");
-        return etiqueta;
+        String etq = "str_" + ctx.getCadenas().size();
+        ctx.getCadenas().put(esc, etq);
+        ctx.getData().append("    ").append(etq).append(": .string \"").append(esc).append("\"\n");
+        return etq;
     }
 
-    /**
-     * Prepara un texto para ponerlo entre comillas en .string.
-     * Las secuencias con barra (\n, \t, \") se respetan tal cual; los saltos de línea reales,
-     * las comillas sueltas y los caracteres no ASCII (se escriben como bytes UTF-8) se escapan.
-     */
     private static String escaparCadena(String s) {
         StringBuilder sb = new StringBuilder();
         int i = 0;
@@ -524,27 +452,14 @@ public class EmisorRiscV {
             int cp = s.codePointAt(i);
             i += Character.charCount(cp);
             if (cp == '\\') {
-                if (i < s.length()) {
-                    sb.append('\\').append(s.charAt(i));
-                    i++;
-                } else {
-                    sb.append("\\\\");
-                }
-            } else if (cp == '"') {
-                sb.append("\\\"");
-            } else if (cp == '\n') {
-                sb.append("\\n");
-            } else if (cp == '\t') {
-                sb.append("\\t");
-            } else if (cp == '\r') {
-                sb.append("\\r");
-            } else if (cp >= 32 && cp < 127) {
-                sb.append((char) cp);
-            } else {
-                for (byte b : new String(Character.toChars(cp)).getBytes(StandardCharsets.UTF_8)) {
+                if (i < s.length()) { sb.append('\\').append(s.charAt(i)); i++; } else sb.append("\\\\");
+            } else if (cp == '"') sb.append("\\\"");
+            else if (cp == '\n') sb.append("\\n");
+            else if (cp == '\t') sb.append("\\t");
+            else if (cp == '\r') sb.append("\\r");
+            else if (cp >= 32 && cp < 127) sb.append((char) cp);
+            else for (byte b : new String(Character.toChars(cp)).getBytes(StandardCharsets.UTF_8))
                     sb.append(String.format("\\%03o", b & 0xFF));
-                }
-            }
         }
         return sb.toString();
     }
@@ -563,19 +478,14 @@ public class EmisorRiscV {
         if (s.length() == 1) return s.charAt(0);
         if (s.length() == 2 && s.charAt(0) == '\\') {
             return switch (s.charAt(1)) {
-                case 'n' -> 10;
-                case 't' -> 9;
-                case 'r' -> 13;
-                case '0' -> 0;
-                default -> s.charAt(1);          // \\, \', \"
+                case 'n' -> 10; case 't' -> 9; case 'r' -> 13; case '0' -> 0;
+                default -> s.charAt(1);
             };
         }
         return Integer.parseInt(s);
     }
 
-    // =====================================================================
-    //  DESCRIPCIONES (comentarios y mensajes de error)
-    // =====================================================================
+    // ========== DESCRIBIR ==========
 
     private static String describir(AccesoMemoria acc) {
         try {
@@ -586,56 +496,36 @@ public class EmisorRiscV {
             if (acc instanceof AccesoArreglo a)
                 return "arr:" + describir(a.getBase()) + "[" + describir(a.getIndice()) + "]";
             return acc.getClass().getSimpleName();
-        } catch (RuntimeException e) {
-            return acc.getClass().getSimpleName();
-        }
+        } catch (RuntimeException e) { return acc.getClass().getSimpleName(); }
     }
 
     private static String describir(Cuarteta c) {
         String d;
         try {
-            if (c instanceof AsignacionArreglo a) {
-                d = "AsignacionArreglo base=" + describir(a.getBase()) + " indice=" + describir(a.getIndice())
-                        + " valor=" + describir(a.getValor());
-            } else if (c instanceof AsignacionVariable a) {
+            if (c instanceof AsignacionArreglo a)
+                d = "AsignacionArreglo base=" + describir(a.getBase()) + " indice=" + describir(a.getIndice()) + " valor=" + describir(a.getValor());
+            else if (c instanceof AsignacionVariable a)
                 d = "AsignacionVariable " + describir(a.getDestino()) + " = " + describir(a.getValor());
-            } else if (c instanceof OperacionBinaria o) {
-                d = "OperacionBinaria " + describir(o.getDestino()) + " = " + describir(o.getIzquierda())
-                        + " " + o.getOperador() + " " + describir(o.getDerecha());
-            } else if (c instanceof OperacionUnaria o) {
+            else if (c instanceof OperacionBinaria o)
+                d = "OperacionBinaria " + describir(o.getDestino()) + " = " + describir(o.getIzquierda()) + " " + o.getOperador() + " " + describir(o.getDerecha());
+            else if (c instanceof OperacionUnaria o)
                 d = "OperacionUnaria " + describir(o.getDestino()) + " = " + o.getOperador() + " " + describir(o.getOperando());
-            } else if (c instanceof Condicional1 k) {
-                d = "Condicional1 if " + describir(k.getIzquierda()) + " " + k.getOperador() + " "
-                        + describir(k.getDerecha()) + " goto L" + k.getEtiqueta();
-            } else if (c instanceof Salto s) {
-                d = "Salto goto L" + s.getEtiqueta();
-            } else if (c instanceof DefinicionEtiqueta e) {
-                d = "Etiqueta L" + e.getEtiqueta() + ":";
-            } else if (c instanceof ImprimirPig i) {
-                d = "ImprimirPig " + i.getTipo() + " " + describir(i.getValor());
-            } else if (c instanceof LeerPig l) {
-                d = "LeerPig " + l.getTipo() + " -> " + describir(l.getDestino());
-            } else if (c instanceof Llamada l) {
+            else if (c instanceof Condicional1 k)
+                d = "Condicional1 if " + describir(k.getIzquierda()) + " " + k.getOperador() + " " + describir(k.getDerecha()) + " goto L" + k.getEtiqueta();
+            else if (c instanceof Salto s) d = "Salto goto L" + s.getEtiqueta();
+            else if (c instanceof DefinicionEtiqueta e) d = "Etiqueta L" + e.getEtiqueta() + ":";
+            else if (c instanceof ImprimirPig i) d = "ImprimirPig " + i.getTipo() + " " + describir(i.getValor());
+            else if (c instanceof LeerPig l) d = "LeerPig " + l.getTipo() + " -> " + describir(l.getDestino());
+            else if (c instanceof Llamada l) {
                 StringBuilder args = new StringBuilder();
-                for (AccesoMemoria a : l.getArgumentos()) {
-                    if (args.length() > 0) args.append(", ");
-                    args.append(describir(a));
-                }
+                for (AccesoMemoria a : l.getArgumentos()) { if (args.length() > 0) args.append(", "); args.append(describir(a)); }
                 d = "Llamada " + describir(l.getDestino()) + " = " + l.getNombreFuncion() + "(" + args + ")";
-            } else if (c instanceof Retorno1 r) {
-                d = "Retorno1 " + describir(r.getValor());
-            } else if (c instanceof ConversionTipo ct) {
-                d = "ConversionTipo " + describir(ct.getDestino()) + " = " + describir(ct.getFuente());
-            } else if (c instanceof Continuar1 k) {
-                d = "Continuar goto L" + k.getEtiqueta();
-            } else if (c instanceof Romper1 r) {
-                d = "Romper goto L" + r.getEtiqueta();
-            } else {
-                d = c.getClass().getSimpleName();
-            }
-        } catch (RuntimeException e) {
-            d = c.getClass().getSimpleName();
-        }
+            } else if (c instanceof Retorno1 r) d = "Retorno1 " + describir(r.getValor());
+            else if (c instanceof ConversionTipo ct) d = "ConversionTipo " + describir(ct.getDestino()) + " = " + describir(ct.getFuente());
+            else if (c instanceof Continuar1 k) d = "Continuar goto L" + k.getEtiqueta();
+            else if (c instanceof Romper1 r) d = "Romper goto L" + r.getEtiqueta();
+            else d = c.getClass().getSimpleName();
+        } catch (RuntimeException e) { d = c.getClass().getSimpleName(); }
         return d.replace("\n", "\\n").replace("\r", "\\r");
     }
 
@@ -646,52 +536,106 @@ public class EmisorRiscV {
     }
 
     private void direccionCampo(AccesoMemoria base, String campo, String registro) {
-        // 1. Obtener la dirección base del struct
         if (!(base instanceof AccesoVariable v)) {
             throw new UnsupportedOperationException(
-                    "EmisorRiscV: la base de un atributo debe ser una variable");
+                    "EmisorRiscV: base de atributo debe ser variable");
         }
         TablaSimbolosPig.SimboloVariable s = simbolo(v);
-        if (!s.esEstructura()) {
-            throw new UnsupportedOperationException(
-                    "EmisorRiscV: '" + v.getNombre() + "' no es una estructura");
-        }
 
-        // 2. Calcular offset del campo
         int offsetCampo = calcularOffsetCampo(s.tipo(), campo);
 
-        // 3. Dirección = s0 + s.offset() + offsetCampo
-        int offsetTotal = s.offset() + offsetCampo;
-        if (cabe(offsetTotal)) {
-            linea("addi %s, s0, %d   # &%s.%s", registro, offsetTotal, v.getNombre(), campo);
+        if (s.esEstructura()) {
+            // Estructura por valor: campo en s0 + s.offset() + offsetCampo.
+            int offsetTotal = s.offset() + offsetCampo;
+            if (cabe(offsetTotal)) {
+                linea("addi %s, s0, %d   # &%s.%s", registro, offsetTotal, v.getNombre(), campo);
+            } else {
+                linea("li   %s, %d", registro, offsetTotal);
+                linea("add  %s, s0, %s   # &%s.%s", registro, registro, v.getNombre(), campo);
+            }
+        } else if (s.esObjeto()) {
+            // Objeto: p es puntero. Cargar p y sumar offsetCampo.
+            if (cabe(s.offset())) {
+                linea("ld   %s, %d(s0)   # %s", registro, s.offset(), v.getNombre());
+            } else {
+                linea("li   %s, %d", AUX, s.offset());
+                linea("add  %s, s0, %s", AUX, AUX);
+                linea("ld   %s, 0(%s)", registro, AUX);
+            }
+            if (offsetCampo != 0) {
+                linea("addi %s, %s, %d   # &%s.%s", registro, registro, offsetCampo, v.getNombre(), campo);
+            }
         } else {
-            linea("li   %s, %d", registro, offsetTotal);
-            linea("add  %s, s0, %s   # &%s.%s", registro, registro, v.getNombre(), campo);
+            throw new UnsupportedOperationException(
+                    "EmisorRiscV: '" + v.getNombre() + "' no es estructura ni objeto");
         }
     }
 
-    private int calcularOffsetCampo(String tipoStruct, String campo) {
-        var estOpt = tabla.buscarEstructura(tipoStruct);
-        if (estOpt.isEmpty()) {
-            throw new IllegalStateException("Estructura no encontrada: " + tipoStruct);
+    private int calcularOffsetCampo(String tipo, String campo) {
+        // 1. Buscar en estructuras.
+        var estOpt = tabla.buscarEstructura(tipo);
+        if (estOpt.isPresent()) {
+            int offset = 0;
+            for (var entry : estOpt.get().atributos().entrySet()) {
+                if (entry.getKey().equals(campo)) return offset;
+                offset += 8;
+            }
         }
-        int offset = 0;
-        for (var entry : estOpt.get().atributos().entrySet()) {
-            if (entry.getKey().equals(campo)) return offset;
-            offset += 8;  // campo i en base + 8*i
+        // 2. Buscar en clases.
+        var claseOpt = tabla.buscarClase(tipo);
+        if (claseOpt.isPresent()) {
+            int offset = 0;
+            for (var entry : claseOpt.get().atributos().entrySet()) {
+                if (entry.getKey().equals(campo)) return offset;
+                offset += 8;
+            }
         }
-        throw new IllegalStateException("Campo no encontrado: " + campo + " en " + tipoStruct);
+        throw new IllegalStateException("Campo no encontrado: " + campo + " en " + tipo);
     }
-
-    // =====================================================================
-    //  SALIDA DE TEXTO
-    // =====================================================================
 
     private void linea(String formato, Object... args) {
-        text.append("    ").append(String.format(formato, args)).append("\n");
+        ctx.getText().append("    ").append(String.format(formato, args)).append("\n");
     }
 
     private void etiqueta(String nombre) {
-        text.append(nombre).append(":\n");
+        ctx.getText().append(nombre).append(":\n");
+    }
+
+    private void emitirNewObjeto(NewObjeto n) {
+        int tam = tamanoDeClase(n.getNombreClase());
+        linea("la   %s, heap_ptr", IZQ);
+        linea("ld   %s, 0(%s)", DER, IZQ);
+        linea("li   %s, %d", RES, tam);
+        linea("add  %s, %s, %s", DIR, DER, RES);
+        linea("sd   %s, 0(%s)", DIR, IZQ);
+        linea("la   %s, heap", AUX);
+        linea("add  a0, %s, %s", AUX, DER);
+
+        List<AccesoMemoria> args = n.getArgumentos();
+        for (int i = 0; i < args.size(); i++) {
+            cargar(args.get(i), "a" + (i + 1));
+        }
+        linea("jal  ra, %s", n.getNombreConstructorC());
+        if (n.getDestino() != null) {
+            almacenar("a0", n.getDestino());
+        }
+    }
+
+    private void emitirLlamadaMetodo(LlamadaMetodo1 l) {
+        cargar(l.getReceptor(), "a0");
+        List<AccesoMemoria> args = l.getArgumentos();
+        for (int i = 0; i < args.size(); i++) {
+            cargar(args.get(i), "a" + (i + 1));
+        }
+        linea("jal  ra, %s", l.getNombreMetodo());
+        if (l.getDestino() != null) {
+            almacenar("a0", l.getDestino());
+        }
+    }
+
+    private int tamanoDeClase(String clase) {
+        var def = tabla.buscarClase(clase);
+        if (def.isEmpty()) return 8;
+        return 8 * def.get().atributos().size();
     }
 }

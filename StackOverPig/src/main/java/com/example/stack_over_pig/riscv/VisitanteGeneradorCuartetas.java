@@ -32,4 +32,7 @@ public interface VisitanteGeneradorCuartetas {
 
     void visitar(NodoSentencia.DeclaracionStruct d);
     void visitar(NodoExpr.AccesoAtributo a);
+    void visitar(NodoExpr.InstanciaObjeto i);
+    void visitar(NodoExpr.LlamadaMetodo l);
+    void visitar(NodoSentencia.LlamadaMetodoSentencia l);
 }

@@ -3,19 +3,15 @@ package com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.AccesoMemoria;
 
 /**
- * Operando: p->campo  o  p.campo
- *
- * Acceso a un campo de estructura u objeto.
- * En .z siempre se usa '->' porque los objetos son punteros.
- * Ejemplo en .z: p1.edad
- * C generado:    p1->edad
+ * Operando: acceso a un campo de un objeto (p.campo).
+ * Los objetos son punteros al heap; el emisor RISC-V suma el offset del campo al puntero.
  */
 public class AccesoAtributo1 extends AccesoMemoria {
 
     private final AccesoMemoria base;
     private final String campo;
     private final boolean porPuntero;
-    private final String tipoCampo; // tipo del campo
+    private final String tipoCampo;
 
     public AccesoAtributo1(AccesoMemoria base, String campo, boolean porPuntero, String tipoCampo) {
         this.base = base;
@@ -33,8 +29,8 @@ public class AccesoAtributo1 extends AccesoMemoria {
 
     @Override
     public void aCodigoC(StringBuilder sb) {
-        base.aCodigoC(sb);
+      /*  base.aCodigoC(sb);
         sb.append(porPuntero ? "->" : ".");
-        sb.append(campo);
+        sb.append(campo);*/
     }
 }

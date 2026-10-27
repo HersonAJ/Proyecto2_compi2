@@ -39,6 +39,8 @@ public class ValidadorImportacionesPig {
     // codigo C generado de los imports
     private final List<com.example.stack_over_pig.c3d_v2.c.FuncionC> funcionesImportadas = new ArrayList<>();
     private final List<com.example.stack_over_pig.c3d_v2.c.EstructuraC> estructurasImportadas = new ArrayList<>();
+    private final List<NodoClase> clasesImportadas = new ArrayList<>();
+    private final Map<String, TablaSimbolosZ> tablasZImportadas = new LinkedHashMap<>();
 
     public ValidadorImportacionesPig(TablaSimbolosPig tabla,
                                      List<ErrorSemantico> errores,
@@ -305,6 +307,8 @@ public class ValidadorImportacionesPig {
             TablaSimbolosPig.DefinicionClase def = new TablaSimbolosPig.DefinicionClase(
                     clase.nombre(), clase.superclase(), atributos, constructores, metodos);
             tabla.declararClase(def);
+            tablasZImportadas.put(clase.nombre(), resultado.getTablaSimbolos());
+            clasesImportadas.add(clase);
             //estructurasImportadas.add(clase.aEstructuraC());
 
             var tablaZ = resultado.getTablaSimbolos();
@@ -378,5 +382,13 @@ public class ValidadorImportacionesPig {
                     "No se pudo leer '" + archivo.toAbsolutePath() + "': " + e.getMessage()));
             return null;
         }
+    }
+
+    public List<NodoClase> getClasesImportadas() {
+        return  clasesImportadas;
+    }
+
+    public Map<String, TablaSimbolosZ> getTablasZImportadas() {
+        return tablasZImportadas;
     }
 }

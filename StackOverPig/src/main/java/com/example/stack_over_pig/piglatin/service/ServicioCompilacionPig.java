@@ -4,20 +4,32 @@ import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.Cuarteta;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.GestorCodigoIntermedio;
 import com.example.stack_over_pig.piglatin.builder.ASTBuilderPig;
 import com.example.stack_over_pig.piglatin.nodo.NodoAST;
+import com.example.stack_over_pig.piglatin.nodo.NodoExpr;
 import com.example.stack_over_pig.piglatin.nodo.NodoPrograma;
+import com.example.stack_over_pig.piglatin.nodo.NodoSentencia;
 import com.example.stack_over_pig.piglatin.semantica.TablaSimbolosPig;
 import com.example.stack_over_pig.piglatin.semantica.ValidadorSemanticoPig;
 import com.example.stack_over_pig.riscv.EmisorRiscV;
+import com.example.stack_over_pig.riscv.FuncionRiscV;
 import com.example.stack_over_pig.riscv.piglatin.GeneradorCuartetasPig;
+import com.example.stack_over_pig.riscv.zetariano.GeneradorCuartetasZ;
 import com.example.stack_over_pig.y.errores.ErrorPosicional;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 import com.example.piglatin.analizador.gramatica.PigLexer;
 import com.example.piglatin.analizador.gramatica.PigParser;
+import com.example.stack_over_pig.zetariano.nodo.NodoClase;
+import com.example.stack_over_pig.zetariano.nodo.NodoConstructor;
+import com.example.stack_over_pig.zetariano.nodo.NodoMetodo;
+import com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ;
 import org.antlr.v4.runtime.*;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+
+import static com.example.stack_over_pig.zetariano.nodo.TipoNodoSentencia.EXPRESION_COMO_SENTENCIA;
 
 public class ServicioCompilacionPig {
 
@@ -63,14 +75,35 @@ public class ServicioCompilacionPig {
 
         try {
             TablaSimbolosPig tabla = ultimoValidador.getTabla();
-            GestorCodigoIntermedio gestor = new GestorCodigoIntermedio();
-            GeneradorCuartetasPig generador = new GeneradorCuartetasPig(gestor, tabla);
-            resultado.getPrograma().aceptar(generador);
 
-            List<Cuarteta> cuartetas = gestor.getCuartetas();
+            // 1. Cuartetas del .pig (main)
+            GestorCodigoIntermedio gestorPig = new GestorCodigoIntermedio();
+            GeneradorCuartetasPig generadorPig = new GeneradorCuartetasPig(gestorPig, tabla);
+            resultado.getPrograma().aceptar(generadorPig);
+            List<Cuarteta> cuartetasMain = gestorPig.getCuartetas();
 
-            EmisorRiscV emisor = new EmisorRiscV(tabla);
-            String codigoRiscV = emisor.emitir(cuartetas);
+            // 2. Funciones de las clases importadas (constructores y métodos)
+            List<FuncionRiscV> funciones = new ArrayList<>();
+            for (NodoClase clase : ultimoValidador.getImportaciones().getClasesImportadas()) {
+                TablaSimbolosZ tablaZ = obtenerTablaZ(clase);  // ver abajo
+                if (tablaZ == null) continue;
+
+                GeneradorCuartetasZ generadorZ = new GeneradorCuartetasZ(tablaZ, clase.nombre());
+
+                for (NodoConstructor c : clase.constructores()) {
+                    funciones.add(generadorZ.generarConstructor(c));
+                }
+                for (NodoMetodo m : clase.metodos()) {
+                    funciones.add(new GeneradorCuartetasZ(tablaZ, clase.nombre()).generarMetodo(m));
+                }
+            }
+
+            // 3. Calcular tamaño del heap (instancias de objetos en el .pig)
+            int tamanoHeap = calcularTamanoHeap(resultado.getPrograma(), tabla);
+
+            // 4. Emitir
+            EmisorRiscV emisor = new EmisorRiscV(tabla, tamanoHeap);
+            String codigoRiscV = emisor.emitir(cuartetasMain, funciones);
 
             return new ResultadoCompilacionPig(
                     true,
@@ -95,7 +128,6 @@ public class ServicioCompilacionPig {
             );
         }
     }
-
     // IMPLEMENTACIÓN INTERNA
     private ResultadoCompilacionPig analizarInterno(String codigoFuente, Path carpetaRaiz) {
 
@@ -206,5 +238,114 @@ public class ServicioCompilacionPig {
                 null,
                 null
         );
+    }
+
+    private int calcularTamanoHeap(NodoPrograma programa, TablaSimbolosPig tabla) {
+        // Contar instancias de cada clase en el .pig
+        Map<String, Integer> instancias = new LinkedHashMap<>();
+        contarInstanciasEnSentencias(programa.variablesGlobales(), instancias);
+        contarInstanciasEnSentencias(programa.cuerpoMain(), instancias);
+
+        int total = 0;
+        for (var e : instancias.entrySet()) {
+            String clase = e.getKey();
+            int num = e.getValue();
+            var def = tabla.buscarClase(clase);
+            if (def.isPresent()) {
+                int tamanoClase = 8 * def.get().atributos().size();
+                total += num * tamanoClase;
+            }
+        }
+        //return total;
+        return Math.max(total + 1024, 4096);
+    }
+
+    private void contarInstanciasEnSentencias(List<NodoSentencia> sentencias,
+                                              Map<String, Integer> instancias) {
+        for (NodoSentencia s : sentencias) {
+            contarInstanciasEnSentencia(s, instancias);
+        }
+    }
+
+    private void contarInstanciasEnSentencia(NodoSentencia s, Map<String, Integer> instancias) {
+        switch (s.tipoNodo()) {
+            case DECLARACION_VARIABLE -> {
+                NodoSentencia.DeclaracionVariable d = (NodoSentencia.DeclaracionVariable) s;
+                if (d.inicializacion() != null) contarInstanciasEnExpr(d.inicializacion(), instancias);
+            }
+            case ASIGNACION -> {
+                NodoSentencia.Asignacion a = (NodoSentencia.Asignacion) s;
+                contarInstanciasEnExpr(a.valor(), instancias);
+            }
+            case CONDICIONAL -> {
+                NodoSentencia.Condicional c = (NodoSentencia.Condicional) s;
+                contarInstanciasEnExpr(c.condicion(), instancias);
+                contarInstanciasEnSentencias(c.cuerpoSi(), instancias);
+                for (NodoSentencia.RamaAliter rama : c.ramasAliter()) {
+                    contarInstanciasEnSentencias(rama.cuerpo(), instancias);
+                }
+                if (c.cuerpoAliter() != null) {
+                    contarInstanciasEnSentencias(c.cuerpoAliter(), instancias);
+                }
+            }
+            case CICLO_DUM -> {
+                NodoSentencia.CicloDum c = (NodoSentencia.CicloDum) s;
+                contarInstanciasEnSentencias(c.cuerpo(), instancias);
+            }
+            case CICLO_FACERE -> {
+                NodoSentencia.CicloFacere c = (NodoSentencia.CicloFacere) s;
+                contarInstanciasEnSentencias(c.cuerpo(), instancias);
+            }
+            case CICLO_PER -> {
+                NodoSentencia.CicloPer c = (NodoSentencia.CicloPer) s;
+                contarInstanciasEnSentencias(c.cuerpo(), instancias);
+            }
+            case ESCRITURA -> {
+                NodoSentencia.Escritura e = (NodoSentencia.Escritura) s;
+                for (NodoExpr v : e.valores()) contarInstanciasEnExpr(v, instancias);
+            }
+            case LLAMADA_FUNCION_SENTENCIA -> {
+                NodoSentencia.LlamadaFuncionSentencia l = (NodoSentencia.LlamadaFuncionSentencia) s;
+                contarInstanciasEnExpr(l.llamada(), instancias);
+            }
+            case LLAMADA_METODO_SENTENCIA -> {
+                NodoSentencia.LlamadaMetodoSentencia l = (NodoSentencia.LlamadaMetodoSentencia) s;
+                contarInstanciasEnExpr(l.llamada(), instancias);
+            }
+            default -> {}
+        }
+    }
+
+    private void contarInstanciasEnExpr(NodoExpr e, Map<String, Integer> instancias) {
+        if (e == null) return;
+        switch (e.tipoNodo()) {
+            case INSTANCIA_OBJETO -> {
+                NodoExpr.InstanciaObjeto inst = (NodoExpr.InstanciaObjeto) e;
+                instancias.merge(inst.tipoClase(), 1, Integer::sum);
+                for (NodoExpr arg : inst.argumentos()) contarInstanciasEnExpr(arg, instancias);
+            }
+            case BINARIA -> {
+                NodoExpr.Binaria b = (NodoExpr.Binaria) e;
+                contarInstanciasEnExpr(b.izquierda(), instancias);
+                contarInstanciasEnExpr(b.derecha(), instancias);
+            }
+            case UNARIA -> contarInstanciasEnExpr(((NodoExpr.Unaria) e).operando(), instancias);
+            case LLAMADA_FUNCION -> {
+                for (NodoExpr arg : ((NodoExpr.LlamadaFuncion) e).argumentos())
+                    contarInstanciasEnExpr(arg, instancias);
+            }
+            case LLAMADA_METODO -> {
+                NodoExpr.LlamadaMetodo l = (NodoExpr.LlamadaMetodo) e;
+                contarInstanciasEnExpr(l.objeto(), instancias);
+                for (NodoExpr arg : l.argumentos()) contarInstanciasEnExpr(arg, instancias);
+            }
+            default -> {}
+        }
+    }
+
+    private TablaSimbolosZ obtenerTablaZ(NodoClase clase) {
+        return ultimoValidador.getImportaciones()
+                .getTablasZImportadas()
+                .get(clase.nombre());
     }
 }
