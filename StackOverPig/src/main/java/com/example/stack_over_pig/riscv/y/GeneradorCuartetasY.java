@@ -4,7 +4,9 @@ import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.ImprimirPig;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.LeerPig;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.AccesoAtributo1;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.NewArregloMulti;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
+import com.example.stack_over_pig.piglatin.semantica.TablaSimbolosPig;
 import com.example.stack_over_pig.riscv.FuncionRiscV;
 import com.example.stack_over_pig.y.ast.*;
 import com.example.stack_over_pig.y.semantica.TablaSimbolos;
@@ -18,14 +20,23 @@ import java.util.*;
 public class GeneradorCuartetasY {
 
     private final TablaSimbolos tabla;
+    private final TablaSimbolosPig tablaPig;
     private final GestorCodigoIntermedio gestor;
     private final Map<String, String> tiposVariables = new LinkedHashMap<>();
+    private final Map<String, String> renombres = new LinkedHashMap<>();
     private AccesoMemoria ultimoResultado;
     private String nombreFuncionActual;
     private String tipoRetornoActual;
 
+
+    /** Solo para pruebas o compatibilidad: sin tabla Pig, las estructuras locales no se registran. */
     public GeneradorCuartetasY(TablaSimbolos tabla) {
+        this(tabla, new TablaSimbolosPig());
+    }
+
+    public GeneradorCuartetasY(TablaSimbolos tabla, TablaSimbolosPig tablaPig) {
         this.tabla = tabla;
+        this.tablaPig = tablaPig;
         this.gestor = new GestorCodigoIntermedio();
     }
 
@@ -46,6 +57,27 @@ public class GeneradorCuartetasY {
                 nombre += "_" + tipoPig;
             }
         }
+
+        for (NodoSentencia s : f.cuerpo()) {
+            if (s instanceof NodoSentencia.DeclaracionEstructuraLocal d) {
+                String nombreOriginal = d.estructura().nombre();
+                String nombreRenombrado = nombreOriginal + "_" + f.nombre();
+                renombres.put(nombreOriginal, nombreRenombrado);
+
+                Map<String, String> atributos = new LinkedHashMap<>();
+                Map<String, Integer> dims = new LinkedHashMap<>();
+                for (NodoAtributo a : d.estructura().atributos()) {
+                    if (a instanceof NodoAtributo.Atributo at) {
+                        String tipo = at.tipoPrimitivo() != null
+                                ? at.tipoPrimitivo() : at.tipoEstructura();
+                        atributos.put(at.nombre(), tipoYaPig(tipo));
+                        dims.put(at.nombre(), at.tamanoArreglo() > 0 ? 1 : 0);
+                    }
+                }
+                tablaPig.declararEstructura(nombreRenombrado, atributos, dims);
+            }
+        }
+
         for (NodoSentencia s : f.cuerpo()) {
             visitarSentencia(s);
         }
@@ -91,9 +123,8 @@ public class GeneradorCuartetasY {
             case DECLARACION_ARREGLO -> visitarDeclaracionArreglo((NodoSentencia.DeclaracionArreglo) s);
             case LEER -> gestor.emitir(new LeerPig(null, "numerus"));
             case ELEGIR -> visitarElegir((NodoSentencia.Elegir) s);
-            case DECLARACION_MATRIZ, DECLARACION_ESTRUCTURA_LOCAL ->
-                    throw new UnsupportedOperationException(
-                            "GeneradorCuartetasY: sentencia no soportada en esta tanda: " + s.tipoNodo());
+            case DECLARACION_MATRIZ -> visitarDeclaracionMatriz((NodoSentencia.DeclaracionMatriz) s);
+            case DECLARACION_ESTRUCTURA_LOCAL -> { /* ya registrada al inicio de generarFuncion */ }
         }
     }
 
@@ -381,10 +412,10 @@ public class GeneradorCuartetasY {
     }
 
     private void visitarDeclaracionEstructura(NodoSentencia.DeclaracionEstructura d) {
-        String tipo = d.tipoEstructura();
+        String tipo = traducirTipo(d.tipoEstructura());
         tiposVariables.put(d.nombre(), tipo);
 
-        var def = tabla.buscarEstructura(tipo)
+        var def = tablaPig.buscarEstructura(tipo)
                 .orElseThrow(() -> new IllegalStateException(
                         "GeneradorCuartetasY: estructura no encontrada: " + tipo));
         List<String> campos = new ArrayList<>(def.atributos().keySet());
@@ -413,6 +444,38 @@ public class GeneradorCuartetasY {
         }
     }
 
+    private void visitarDeclaracionMatriz(NodoSentencia.DeclaracionMatriz d) {
+        String tipo = tipoYaPig(d.tipo());
+        tiposVariables.put(d.nombre(), tipo);
+        AccesoTemporal t = nuevoTemporal(tipo);
+        gestor.emitir(new NewArregloMulti(
+                t,
+                d.tipo(),
+                List.of(new Literal(d.filas(), "numerus"),
+                        new Literal(d.columnas(), "numerus"))));
+
+        gestor.emitir(new AsignacionVariable(
+                new AccesoVariable(d.nombre(), tipo), t));
+        if (d.inicializacion() != null) {
+            for (int i = 0; i < d.inicializacion().size() && i < d.filas(); i++) {
+                List<NodoExpr> fila = d.inicializacion().get(i);
+                if (fila == null) continue;
+                for (int j = 0; j < fila.size() && j < d.columnas(); j++) {
+                    visitarExpresion(fila.get(j));
+                    AccesoMemoria base = new AccesoVariable(d.nombre(), tipo);
+                    AccesoMemoria idxI = new Literal(i, "numerus");
+                    AccesoMemoria idxJ = new Literal(j, "numerus");
+                    AccesoMemoria celda = new AccesoArreglo(
+                            new AccesoArreglo(base, idxI, tipo), idxJ, tipo);
+                    gestor.emitir(new AsignacionArreglo(
+                            ((AccesoArreglo) celda).getBase(),
+                            ((AccesoArreglo) celda).getIndice(),
+                            ultimoResultado));
+                }
+            }
+        }
+    }
+
     private void visitarAccesoArray(NodoExpr.AccesoArray a) {
         visitarExpresion(a.arreglo());
         AccesoMemoria base = ultimoResultado;
@@ -427,7 +490,7 @@ public class GeneradorCuartetasY {
         AccesoMemoria obj = ultimoResultado;
         String tipoObj = tipoPigDeExpresion(a.objeto());
 
-        var def = tabla.buscarEstructura(tipoObj)
+        var def = tablaPig.buscarEstructura(tipoObj)
                 .orElseThrow(() -> new IllegalStateException(
                         "GeneradorCuartetasY: acceso a atributo sobre tipo no struct: " + tipoObj));
         String tipoCampo = def.atributos().get(a.atributo());
@@ -476,7 +539,7 @@ public class GeneradorCuartetasY {
             case ACCESO_ATRIBUTO -> {
                 NodoExpr.AccesoAtributo at = (NodoExpr.AccesoAtributo) e;
                 String tipoObj = tipoPigDeExpresion(at.objeto());
-                var def = tabla.buscarEstructura(tipoObj);
+                var def = tablaPig.buscarEstructura(tipoObj);
                 yield def.map(d -> tipoYaPig(d.atributos().get(at.atributo())))
                         .orElse("numerus");
             }
@@ -495,5 +558,9 @@ public class GeneradorCuartetasY {
             case "bool"     -> "bool";
             default         -> tipoY;
         };
+    }
+
+    private String traducirTipo(String tipo) {
+        return tipo == null ? null : renombres.getOrDefault(tipo, tipo);
     }
 }

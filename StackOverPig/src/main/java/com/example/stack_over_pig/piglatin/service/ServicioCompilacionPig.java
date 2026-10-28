@@ -86,8 +86,6 @@ public class ServicioCompilacionPig {
             GeneradorCuartetasPig generadorPig = new GeneradorCuartetasPig(gestorPig, tabla);
             resultado.getPrograma().aceptar(generadorPig);
             List<Cuarteta> cuartetasMain = gestorPig.getCuartetas();
-//modificado y funciono para constructor 1 no quitar
-            // 2. Funciones de las clases importadas (constructores y métodos)
             List<FuncionRiscV> funciones = new ArrayList<>();
             System.out.println("=== DEBUG clasesImportadas ===");
             for (NodoClase c : ultimoValidador.getImportaciones().getClasesImportadas()) {
@@ -100,8 +98,6 @@ public class ServicioCompilacionPig {
             for (NodoClase clase : ultimoValidador.getImportaciones().getClasesImportadas()) {
                 TablaSimbolosZ tablaZ = obtenerTablaZ(clase);
                 if (tablaZ == null) continue;
-
-                // Un generador NUEVO por función: guarda las cuartetas y variables de una sola función.
                 if (clase.constructores().isEmpty()) {
                     funciones.add(new GeneradorCuartetasZ(tablaZ, clase.nombre()).generarConstructorPorDefecto());
                 }
@@ -131,7 +127,7 @@ public class ServicioCompilacionPig {
                     var tablaY = tablasY.get(i);
                     for (NodoFuncion nf : progY.funciones()) {
                         if (nf instanceof NodoFuncion.Funcion f) {
-                            funciones.add(new GeneradorCuartetasY(tablaY).generarFuncion(f));
+                            funciones.add(new GeneradorCuartetasY(tablaY, tabla).generarFuncion(f));
                         }
                     }
                 }
