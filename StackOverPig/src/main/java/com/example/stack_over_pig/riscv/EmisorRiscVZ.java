@@ -34,6 +34,21 @@ public class EmisorRiscVZ {
     }
 
     public void emitirFuncion(FuncionRiscV funcion) {
+        // ============================================================
+        // CONTEXTO DE LA FUNCIÓN (una instancia = una función)
+        // ============================================================
+        // EmisorRiscVZ se crea nuevo por cada función (constructor, metodo Z
+        // o función Y). Los campos que guarda son específicos de esta función:
+        //   - tipoClaseActual: la clase de la que cuelga la función (o null en Y).
+        //   - tiposVariablesActuales: mapa nombre -> tipo Pig (para resolver
+        //     AccesoAtributo, AccesoVariable, etc.).
+        //   - parametrosPorReferencia: Set de nombres de params que ocupan
+        //     un slot que es un PUNTERO (objetos Z, {} Struct Y, [] T Y).
+        //   - arreglosHeap: Set de nombres de variables locales que reciben
+        //     el resultado de un NewArreglo/NewArregloMulti y por tanto
+        //     guardan un puntero al heap (no un bloque en pila).
+        //   - offsets: mapa nombre -> offset (negativo desde s0).
+        //   - siguienteOffset: cuántos bytes se han reservado debajo de s0.
         tipoClaseActual = funcion.tipoClase();
         tiposVariablesActuales = funcion.tiposVariables();
         parametrosPorReferencia = new HashSet<>();
@@ -41,7 +56,24 @@ public class EmisorRiscVZ {
         for (FuncionRiscV.ParametroRiscV p : funcion.parametros()) {
             if (p.esPorReferencia()) parametrosPorReferencia.add(p.nombre());
         }
+
+        // ============================================================
+        // OFFSETS INICIALES (this + parámetros)
+        // ============================================================
+        // Antes de emitir el cuerpo, reservamos los slots de `this` y de
+        // los parámetros. El cuerpo, al emitirse, irá pidiendo offsets
+        // para sus variables locales y temporales con `offsetDe(...)`,
+        // que hace crecer `siguienteOffset`.
         asignarOffsets(funcion);
+
+        // ============================================================
+        // EMISIÓN DEL CUERPO (StringBuilder aparte)
+        // ============================================================
+        // Emitimos primero el cuerpo a un StringBuilder separado. Durante
+        // la emisión, `offsetDe(...)` reserva slots para locales y
+        // temporales, así que `siguienteOffset` crece. Cuando terminamos,
+        // `siguienteOffset` ya incluye TODOel marco (this + params +
+        // locales + temporales).
         StringBuilder cuerpo = new StringBuilder();
         int numero = 0;
         for (Cuarteta c : funcion.cuartetas()) {
@@ -54,16 +86,58 @@ public class EmisorRiscVZ {
                         "EmisorRiscVZ: falló en cuarteta #" + numero + " de " + funcion.nombre() + " | " + e.getMessage(), e);
             }
         }
+
+        // ============================================================
+        // CÁLCULO DEL FRAMESIZE
+        // ============================================================
+        // La fórmula es la misma que en el main de Pig, y tiene los
+        // mismos tres sumandos:
+        //
+        //   framesize = ((siguienteOffset + 8 + 15) / 16) * 16
+        //
+        //   - siguienteOffset : bytes reservados debajo de s0
+        //   - 8               : porque s0 = sp + framesize - 8, así el slot
+        //                       más profundo (-siguienteOffset(s0)) queda
+        //                       DENTRO del marco, no justo en sp.
+        //   - 15 / 16 * 16    : redondeo a múltiplo de 16 (alineación RV64).
+        //
+        // Ejemplos verificados:
+        //   Cuenta_getSaldo (this solo, sin locales): siguienteOffset=16
+        //     → (16 + 8 + 15) / 16 * 16 = 39 / 16 * 16 = 32
+        //   Cuenta_depositar_decimalis (this + 1 param + temporales):
+        //     siguienteOffset=88 → (88 + 8 + 15) / 16 * 16 = 96
         int framesize = ((siguienteOffset + 8 + 15) / 16) * 16;
 
+        // ============================================================
+        // ENSAMBLADO FINAL DE LA FUNCIÓN
+        // ============================================================
         StringBuilder sb = ctx.getFunciones();
         sb.append("\n# ---------- Función: ").append(funcion.nombre()).append(" ----------\n");
         sb.append(funcion.nombre()).append(":\n");
         sb.append(prologo(framesize));
 
+        // ============================================================
+        // GUARDADO DE `this` (solo funciones Z)
+        // ============================================================
+        // En Z, el primer argumento `a0` es `this`. Se guarda en `-16(s0)`
+        // para tenerlo accesible durante todoel cuerpo con `ld -16(s0)`.
+        // En Y no hay `this`, así que este bloque no se emite.
         if (funcion.tieneThis()) {
             sb.append("    sd   a0, -16(s0)        # this\n");
         }
+
+        // ============================================================
+        // GUARDADO DE PARÁMETROS
+        // ============================================================
+        // En Z, `a0` es `this` y los parámetros llegan en `a1, a2, ...`.
+        // En Y, no hay `this` y los parámetros llegan en `a0, a1, ...`.
+        // Por eso:
+        //   - baseParam  = tieneThis ? 1 : 0  (registro de origen)
+        //   - baseOffset = tieneThis ? -24 : -16  (slot destino)
+        //
+        // Layout resultante:
+        //   Z:  -16=this, -24=param1, -32=param2, ...
+        //   Y:  -16=param1, -24=param2, -32=param3, ...
         int baseParam = funcion.tieneThis() ? 1 : 0;
         int baseOffset = funcion.tieneThis() ? -24 : -16;
         for (int i = 0; i < funcion.parametros().size(); i++) {
@@ -77,12 +151,27 @@ public class EmisorRiscVZ {
     }
 
     private void asignarOffsets(FuncionRiscV funcion) {
+        // ============================================================
+        // OFFSETS INICIALES DE LA FUNCIÓN
+        // ============================================================
+        // Reset: cada función empieza con offsets vacíos y siguienteOffset=8.
+        // El 8 inicial representa el slot de `s0` guardado en `0(s0)`.
         offsets.clear();
         siguienteOffset = 8;
+
+        // `this` ocupa -16(s0) en funciones Z (si lo tienen). Se reserva
+        // antes que los parámetros. `siguienteOffset` sube a 16 (el 8 de s0
+        // guardado + 8 de this).
         if (funcion.tieneThis()) {
             offsets.put("this", -16);
             siguienteOffset = 16;
         }
+
+        // Cada parámetro ocupa un slot de 8 bytes:
+        //   Z: param1 → -24, param2 → -32, ...
+        //   Y: param1 → -16, param2 → -24, ...
+        // El `+= 8` y luego `-siguienteOffset` hacen que el offset sea
+        // negativo y crezca hacia abajo.
         for (FuncionRiscV.ParametroRiscV p : funcion.parametros()) {
             siguienteOffset += 8;
             offsets.put(p.nombre(), -siguienteOffset);
@@ -90,11 +179,31 @@ public class EmisorRiscVZ {
     }
 
     private int offsetDe(String nombre) {
+        // ============================================================
+        // RESERVA DE UN SLOT NUEVO (lazy)
+        // ============================================================
+        // Si el slot ya existe (this o un parámetro asignado en
+        // asignarOffsets), se devuelve su offset.
         Integer off = offsets.get(nombre);
         if (off != null) return off;
+
+        // ============================================================
+        // CÁLCULO DEL TAMAÑO DEL SLOT
+        // ============================================================
+        // Cada nombre tiene un tipo (en `tiposVariablesActuales`) que
+        // puede ser primitivo (8 bytes), struct Y (8*n campos),
+        // arreglo local (8*tamaño), o clase Z (8 bytes = puntero).
+        // `tamanoEnBytes` hace el cálculo.
         String tipo = tiposVariablesActuales.get(nombre);
         int bytes = tamanoEnBytes(nombre, tipo);
+
+        // Alineación a 8 (RV64 exige alineación de 8 para ld/sd).
+        // Primitivos ya son 8, structs son múltiplos de 8, arreglos son
+        // múltiplos de 8. El redondeo es defensivo.
         bytes = ((bytes + 7) / 8) * 8;
+
+        // Reservar: `siguienteOffset` sube, y el slot empieza en
+        // -siguienteOffset (negativo, hacia abajo desde s0).
         siguienteOffset += bytes;
         int nuevo = -siguienteOffset;
         offsets.put(nombre, nuevo);
@@ -102,15 +211,31 @@ public class EmisorRiscVZ {
     }
 
     private int tamanoEnBytes(String nombre, String tipoPig) {
+        // ============================================================
+        // TAMAÑO EN PILA DE UNA VARIABLE SEGÚN SU TIPO Pig
+        // ============================================================
+        // Reglas:
+        //   1. Primitivos (numerus, decimalis, littera, bool, textum):
+        //      8 bytes (un slot). `textum` es un PUNTERO a la cadena en
+        //      el heap; el puntero ocupa 8 bytes en pila.
+        //   2. Clase Z (Cuenta, Envio, ...): 8 bytes (puntero al objeto en
+        //      el heap).
+        //   3. Struct Y (Bitacora, Persona, ...): 8 * numCampos inline.
+        //   4. Arreglo local (`series x[N]` en Pig, `int[] a` en Y):
+        //      8 * tamaño inline.
+        //
+        // Los parámetros por referencia (objetos Z, {} Struct Y, [] T Y)
+        // se tratan como 8 bytes en pila: el slot guarda un PUNTERO, no
+        // los datos.
         if (tipoPig == null) return 8;
 
-        // Struct Y importado: 8 * numCampos.
+        // 1. Struct Y importado: 8 * numCampos.
         var est = ctx.getTabla().buscarEstructura(tipoPig);
         if (est.isPresent()) {
             return 8 * Math.max(1, est.get().atributos().size());
         }
 
-        // Arreglo local: 8 * tamanoConocido (si está en la tabla).
+        // 2. Arreglo local: 8 * tamanoConocido (si está en la tabla).
         var sim = ctx.getTabla().buscarVariable(nombre);
         if (sim.isPresent()) {
             var s = sim.get();
@@ -119,7 +244,7 @@ public class EmisorRiscVZ {
             }
         }
 
-        // Primitivo o clase Z (un puntero de 8 bytes).
+        // 3. Primitivo o clase Z (un puntero de 8 bytes).
         return 8;
     }
 

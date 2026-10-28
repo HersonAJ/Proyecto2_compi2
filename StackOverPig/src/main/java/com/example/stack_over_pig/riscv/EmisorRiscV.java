@@ -73,6 +73,27 @@ public class EmisorRiscV {
             }
         }
 
+        // ============================================================
+        // CÁLCULO DEL FRAMESIZE DEL `main`
+        // ============================================================
+        // `tabla.getSiguienteOffset()` devuelve cuántos bytes se han reservado
+        // por debajo del inicio del marco (en valor absoluto: siempre crece).
+        // Empieza en 16 por defecto (por `s0` guardado en `+0(s0)` y `ra`
+        // en `-8(s0)`), y crece 8 por cada variable local o temporal nuevo.
+        //
+        //   framesize = ((siguienteOffset + 8 + 15) / 16) * 16
+        //
+        // Los tres sumandos:
+        //   - siguienteOffset : bytes ya reservados por debajo de s0
+        //   - 8               : porque s0 = sp + framesize - 8, así el slot
+        //                       más profundo (-siguienteOffset(s0)) queda
+        //                       DENTRO del marco, no justo en sp.
+        //   - 15 / 16 * 16    : redondeo hacia arriba a múltiplo de 16
+        //                       (alineación que exige RV64 para `sp`).
+        //
+        // Ejemplo típico (banco.pig): siguienteOffset = 464
+        //   → (464 + 8 + 15) / 16 * 16 = 487 / 16 * 16 = 30 * 16 = 480
+        //   → `addi sp, sp, -480` en el prólogo (verificado en el .s real).
         int framesize = ((tabla.getSiguienteOffset() + 8 + 15) / 16) * 16;
 
         // 2. Emitir funciones de Z.
@@ -135,14 +156,40 @@ public class EmisorRiscV {
 
     private static String prologo(int framesize) {
         StringBuilder sb = new StringBuilder();
+
+        // ============================================================
+        // PRÓLOGO DEL `main` — cálculo de sp, s0, y guardado del marco anterior
+        // ============================================================
+        // Layout que se construye (direcciones de mayor a menor):
+        //
+        //   framesize-8(sp)  → [s0 anterior]
+        //   framesize-16(sp) → [ra]
+        //   framesize-24(sp) → primer slot utilizable
+        //   ...
+        //   0(sp)            → [slot más profundo]
+        //
+        // y al final:  s0 = sp + framesize - 8
+        //
+        // por qué `-8`: s0 apunta al slot de s0 anterior, y los slots van
+        // hacia abajo desde ahí (offsets negativos: -8, -16, ...).
+        // El `+0(s0)` queda en la dirección `framesize-8(sp)` (el más alto
+        // del marco nuevo), y el slot más profundo `-N(s0)` queda dentro
+        // del marco gracias al `+8` del cálculo de framesize (ver emitir).
+        //
+        // Caso `framesize <= 2048`: `addi sp, sp, -framesize` cabe en 12 bits
+        // (inmediato con signo de 12 bits = -2048..2047). Es el caso normal.
+        // Caso `framesize > 2048`: no cabe; se usa `li t0, framesize` +
+        // `sub sp, sp, t0` (suma/resta con registro).
         if (framesize <= 2048) {
             sb.append("    addi sp, sp, -").append(framesize).append("\n");
             sb.append("    sd   s0, ").append(framesize - 8).append("(sp)\n");
             sb.append("    sd   ra, ").append(framesize - 16).append("(sp)\n");
             sb.append("    addi s0, sp, ").append(framesize - 8).append("\n");
         } else {
+            // `t0` se usa como temporal para restar un valor grande.
             sb.append("    li   t0, ").append(framesize).append("\n");
             sb.append("    sub  sp, sp, t0\n");
+            // Recalcular el tope del marco viejo en `t0` para guardar s0/ra.
             sb.append("    add  t0, sp, t0\n");
             sb.append("    sd   s0, -8(t0)\n");
             sb.append("    sd   ra, -16(t0)\n");
@@ -153,6 +200,23 @@ public class EmisorRiscV {
 
     private static String epilogo(int framesize) {
         StringBuilder sb = new StringBuilder();
+
+        // ============================================================
+        // EPÍLOGO DEL `main` — deshace el prólogo en orden inverso
+        // ============================================================
+        // Se ejecuta en `__epilogo_main`, al que saltan todas las
+        // `Retorno1` del `main`.
+        //
+        // Restaura en orden inverso al prólogo:
+        //   1. `ra` desde `-8(s0)`  (lo había guardado el prólogo)
+        //   2. `s0` desde `0(s0)`   (s0 anterior)
+        //   3. `sp += framesize`    (libera el marco)
+        //   4. `ret`                (vuelve al llamador)
+        //
+        // Después de `ld s0, 0(s0)`, `s0` apunta otra vez al marco del
+        // llamador (o al valor inicial si era main). Después de
+        // `addi sp, sp, framesize`, `sp` recupera el valor que tenía
+        // antes del `addi sp, sp, -framesize` del prólogo.
         sb.append("    ld   ra, -8(s0)\n");
         sb.append("    ld   s0, 0(s0)\n");
         if (framesize <= 2048) {
@@ -489,9 +553,47 @@ public class EmisorRiscV {
         return s;
     }
 
-    private static boolean cabe(int offset) { return offset >= -2048 && offset <= 2047; }
+    private static boolean cabe(int offset) {
+        // ============================================================
+        // ¿El offset cabe en el inmediato de 12 bits con signo de RV64I?
+        // ============================================================
+        // Las instrucciones de carga/almacenamiento (`ld`, `sd`, `lw`, `sw`,
+        // `lb`, `sb`, `lh`, `sh`) y las de suma con inmediato (`addi`,
+        // `andi`, `ori`, `xori`) tienen un campo de inmediato de 12 bits
+        // **con signo**, que va de -2048 a +2047.
+        //
+        // Si el offset cae fuera de ese rango, hay que pasarlo por un
+        // registro auxiliar (`li t6, offset; add t6, s0, t6; ld t0, 0(t6)`).
+        // El cálculo de framesize del prólogo garantiza que los slots
+        // habituales están cerca de `s0` (offset negativo pequeño), pero
+        // un programa con muchas variables locales podría superarlo.
+        return offset >= -2048 && offset <= 2047;
+    }
 
     private void accesoPila(String instr, String registro, Ubicacion u) {
+        // ============================================================
+        // ACCESO A UN SLOT DE PILA (variable local o temporal)
+        // ============================================================
+        // Todos los slots se direccionan con respecto a `s0` (frame pointer),
+        // NO con respecto a `sp`. Motivo: si usáramos `sp`, cualquier
+        // `addi sp, sp, -X` (por ejemplo, al hacer otra llamada) cambiaría
+        // el offset de todolo que ya estaba en la pila. Con `s0` el offset
+        // es estable durante toda la vida del marco.
+        //
+        // Caso normal: el offset cabe en 12 bits con signo (-2048..2047),
+        // porque `ld/sd` acepta un inmediato de 12 bits. Se emite directo:
+        //   ld t0, -32(s0)
+        //
+        // Caso extremo (marcos > 2 KiB): el offset no cabe. Se carga el
+        // offset en `t6` (registro auxiliar), se suma a `s0`, y se accede
+        // con offset 0:
+        //   li   t6, -2100
+        //   add  t6, s0, t6
+        //   ld   t0, 0(t6)
+        //
+        // `t6` (AUX) se usa porque no lo tocan las otras rutinas del
+        // emisor y no colisiona con `t0-t5` (que son los registros de
+        // trabajo normales).
         if (cabe(u.offset())) {
             linea("%s   %s, %d(s0)   # %s", instr, registro, u.offset(), u.nombre());
         } else {

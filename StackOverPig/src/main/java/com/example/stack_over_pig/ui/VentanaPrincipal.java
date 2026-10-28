@@ -374,8 +374,10 @@ public class VentanaPrincipal {
         }
 
         // 2. Mostrar el .s generado
+        // 2. Mostrar el .s generado en su tab
         panelSalida.imprimirConsola("=== CÓDIGO RISC-V GENERADO ===");
-        panelSalida.imprimirConsola(compilado.getCodigoRiscV());
+        panelSalida.mostrarCuartetas(compilado.getCodigoRiscV());
+        panelSalida.seleccionarTabCuartetas();
 
     }
 

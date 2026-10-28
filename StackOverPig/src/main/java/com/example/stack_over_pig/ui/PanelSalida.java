@@ -205,4 +205,9 @@ public class PanelSalida extends TabPane {
     public int totalErrores() {
         return modeloErrores.size();
     }
+
+    /** Selecciona el tab "Codigo RISC-V" para que el usuario lo vea. */
+    public void seleccionarTabCuartetas() {
+        getSelectionModel().select(2);
+    }
 }
