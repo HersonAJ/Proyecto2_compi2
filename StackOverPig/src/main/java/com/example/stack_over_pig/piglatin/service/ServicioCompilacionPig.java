@@ -89,6 +89,14 @@ public class ServicioCompilacionPig {
 //modificado y funciono para constructor 1 no quitar
             // 2. Funciones de las clases importadas (constructores y métodos)
             List<FuncionRiscV> funciones = new ArrayList<>();
+            System.out.println("=== DEBUG clasesImportadas ===");
+            for (NodoClase c : ultimoValidador.getImportaciones().getClasesImportadas()) {
+                System.out.println("  clase: " + c.nombre() + " (super: " + c.superclase() + ")");
+            }
+            System.out.println("=== DEBUG tablasZImportadas keys ===");
+            for (String k : ultimoValidador.getImportaciones().getTablasZImportadas().keySet()) {
+                System.out.println("  tabla: " + k);
+            }
             for (NodoClase clase : ultimoValidador.getImportaciones().getClasesImportadas()) {
                 TablaSimbolosZ tablaZ = obtenerTablaZ(clase);
                 if (tablaZ == null) continue;
@@ -101,6 +109,15 @@ public class ServicioCompilacionPig {
                     funciones.add(new GeneradorCuartetasZ(tablaZ, clase.nombre()).generarConstructor(c));
                 }
                 for (NodoMetodo m : clase.metodos()) {
+                    if (clase.nombre().equals("CuentaCorriente")) {
+                        System.out.println("=== DEBUG CuentaCorriente: métodos de Cuenta ===");
+                        System.out.println("  getMetodosDe(\"CuentaCorriente\", \"ajustarSaldo\") = " +
+                                tablaZ.getMetodosDe("CuentaCorriente", "ajustarSaldo").size());
+                        System.out.println("  getMetodosDe(\"Cuenta\", \"ajustarSaldo\") = " +
+                                tablaZ.getMetodosDe("Cuenta", "ajustarSaldo").size());
+                        System.out.println("  buscarClaseExterna(\"Cuenta\").isPresent() = " +
+                                tablaZ.buscarClaseExterna("Cuenta").isPresent());
+                    }
                     funciones.add(new GeneradorCuartetasZ(tablaZ, clase.nombre()).generarMetodo(m));
                 }
             }

@@ -6,18 +6,8 @@ import java.util.Set;
 
 /**
  * Rutinas de entrada/salida escritas en ensamblador RISC-V (RV64).
- * <p>
- * Todo pasa por el ecall de Linux
- * (a7 = número de llamada; a0, a1, a2 = argumentos):
  * write = 64   read = 63   exit = 93
- * Ese es el ABI que usan qemu-riscv64 y spike con pk.
- * <p>
- * Convención de las rutinas (igual que las funciones del curso):
- * argumento en a0 (y a1), resultado en a0, se vuelve con ret.
- * Solo tocan t0-t6 y a0-a7; si usan s1-s4 los respaldan en su propio marco.
- * <p>
- * IMPORTANTE para quien las llama: ningún registro t* sobrevive a un jal.
- * Los valores que se necesiten después de la llamada deben guardarse en la pila.
+ * Convención: argumento en a0/a1, resultado en a0, ret.
  */
 final class RutinasConsola {
 
@@ -34,11 +24,14 @@ final class RutinasConsola {
     static final String Z_TO_STRING_INT = "__z_to_string_int";
     static final String Z_TO_STRING_CHAR = "__z_to_string_char";
     static final String Z_TO_STRING_BOOL = "__z_to_string_bool";
+    static final String IMPRIMIR_DECIMAL = "__imprimir_decimal";
+    static final String Z_TO_STRING_DOUBLE = "__z_to_string_double";
+    static final String LEER_DECIMAL = "__leer_decimal";
 
-    private static final Map<String, String> CODIGO = Map.of(
+    private static final Map<String, String> CODIGO = Map.ofEntries(
 
-            IMPRIMIR_CADENA, """
-                    # a0 = dirección de una cadena terminada en 0. Mide la longitud y hace write(1, cadena, longitud)
+            Map.entry(IMPRIMIR_CADENA, """
+                    # a0 = dirección de una cadena terminada en 0.
                     __imprimir_cadena:
                         mv   a1, a0
                         li   a2, 0
@@ -53,10 +46,10 @@ final class RutinasConsola {
                         li   a7, 64
                         ecall
                         ret
-                    """,
+                    """),
 
-            IMPRIMIR_CARACTER, """
-                    # a0 = código del carácter. Lo deja en la pila y hace write(1, &caracter, 1)
+            Map.entry(IMPRIMIR_CARACTER, """
+                    # a0 = código del carácter.
                     __imprimir_caracter:
                         addi sp, sp, -16
                         sb   a0, 0(sp)
@@ -67,10 +60,10 @@ final class RutinasConsola {
                         ecall
                         addi sp, sp, 16
                         ret
-                    """,
+                    """),
 
-            IMPRIMIR_ENTERO, """
-                    # a0 = entero con signo (64 bits). Convierte a texto desde el final de un buffer de la pila y hace write
+            Map.entry(IMPRIMIR_ENTERO, """
+                    # a0 = entero con signo (64 bits).
                     __imprimir_entero:
                         addi sp, sp, -48
                         addi t1, sp, 40
@@ -100,10 +93,10 @@ final class RutinasConsola {
                         ecall
                         addi sp, sp, 48
                         ret
-                    """,
+                    """),
 
-            LEER_CARACTER, """
-                    # Devuelve en a0 el siguiente byte de la entrada estándar (-1 si no hay más)
+            Map.entry(LEER_CARACTER, """
+                    # Devuelve en a0 el siguiente byte (-1 si EOF).
                     __leer_caracter:
                         addi sp, sp, -16
                         li   a0, 0
@@ -120,10 +113,10 @@ final class RutinasConsola {
                         li   a0, -1
                         addi sp, sp, 16
                         ret
-                    """,
+                    """),
 
-            LEER_ENTERO, """
-                    # Lee un entero decimal (con signo opcional). Salta espacios y saltos de línea al inicio
+            Map.entry(LEER_ENTERO, """
+                    # Lee entero decimal con signo opcional.
                     __leer_entero:
                         addi sp, sp, -32
                         sd   ra, 24(sp)
@@ -163,10 +156,10 @@ final class RutinasConsola {
                         ld   s2, 8(sp)
                         addi sp, sp, 32
                         ret
-                    """,
+                    """),
 
-            LEER_CADENA, """
-                    # a0 = buffer destino, a1 = capacidad en bytes. Lee una línea y la deja terminada en 0
+            Map.entry(LEER_CADENA, """
+                    # a0 = buffer destino, a1 = capacidad. Lee una línea terminada en 0.
                     __leer_cadena:
                         addi sp, sp, -32
                         sd   ra, 24(sp)
@@ -193,12 +186,10 @@ final class RutinasConsola {
                         ld   s2, 8(sp)
                         addi sp, sp, 32
                         ret
-                    """,
+                    """),
 
-            CONCAT, """
-                    # a0 = string izq, a1 = string der. Devuelve en a0 un string nuevo (en el heap) con izq + der.
-                    # Respalda ra, s1-s4. La reserva del heap se redondea a múltiplo de 8 para mantener alineados
-                    # los objetos que se reserven después.
+            Map.entry(CONCAT, """
+                    # a0 = izq, a1 = der. Devuelve a0 = izq + der (en el heap).
                     __concat:
                         addi sp, sp, -48
                         sd   ra, 40(sp)
@@ -208,7 +199,6 @@ final class RutinasConsola {
                         sd   s4, 8(sp)
                         mv   s1, a0
                         mv   s2, a1
-                        # longitud izq
                         mv   a1, s1
                         li   a2, 0
                     __cc_l1:
@@ -218,8 +208,7 @@ final class RutinasConsola {
                         addi a2, a2, 1
                         j    __cc_l1
                     __cc_l1_fin:
-                        mv   t2, a2        # len1
-                        # longitud der
+                        mv   t2, a2
                         mv   a1, s2
                         li   a2, 0
                     __cc_l2:
@@ -230,18 +219,16 @@ final class RutinasConsola {
                         j    __cc_l2
                     __cc_l2_fin:
                         add  a0, t2, a2
-                        addi a0, a0, 1     # + terminador
+                        addi a0, a0, 1
                         addi a0, a0, 7
-                        andi a0, a0, -8    # redondear a múltiplo de 8
+                        andi a0, a0, -8
                         mv   s3, a0
-                        # reservar en el heap (bump)
                         la   t0, heap_ptr
                         ld   t1, 0(t0)
                         add  t2, t1, s3
                         sd   t2, 0(t0)
                         la   t3, heap
-                        add  s4, t3, t1     # s4 = destino
-                        # copiar izq a s4
+                        add  s4, t3, t1
                         mv   a1, s1
                         mv   a0, s4
                         li   t0, 0
@@ -254,8 +241,7 @@ final class RutinasConsola {
                         addi t0, t0, 1
                         j    __cc_c1
                     __cc_c1_fin:
-                        # copiar der después
-                        mv   t3, t0        # pos
+                        mv   t3, t0
                         mv   a2, s2
                         li   t0, 0
                     __cc_c2:
@@ -278,17 +264,16 @@ final class RutinasConsola {
                         ld   s4, 8(sp)
                         addi sp, sp, 48
                         ret
-                    """,
+                    """),
 
-            Z_TO_STRING_INT, """
-                    # a1 = entero con signo. Devuelve en a0 un string nuevo (en el heap) con su representación decimal.
-                    # Los dígitos se arman al revés en un buffer de la pila, terminado en 0, y luego se copian al heap.
+            Map.entry(Z_TO_STRING_INT, """
+                    # a1 = entero con signo. Devuelve a0 = string decimal.
                     __z_to_string_int:
                         addi sp, sp, -64
                         sd   ra, 56(sp)
                         addi t1, sp, 48
                         mv   t2, t1
-                        sb   zero, 0(t1)    # terminador de cadena
+                        sb   zero, 0(t1)
                         li   t3, 0
                         mv   t0, a1
                         bge  t0, zero, __ztsi_positivo
@@ -308,7 +293,6 @@ final class RutinasConsola {
                         li   t5, 45
                         sb   t5, 0(t2)
                     __ztsi_fin:
-                        # reservar en el heap: longitud + terminador, redondeado a múltiplo de 8
                         sub  t0, t1, t2
                         addi t0, t0, 1
                         addi t0, t0, 7
@@ -318,7 +302,7 @@ final class RutinasConsola {
                         add  t3, t4, t0
                         sd   t3, 0(t5)
                         la   t6, heap
-                        add  a0, t6, t4     # a0 = destino
+                        add  a0, t6, t4
                         mv   t1, a0
                         mv   t3, t2
                     __ztsi_copiar:
@@ -332,66 +316,298 @@ final class RutinasConsola {
                         ld   ra, 56(sp)
                         addi sp, sp, 64
                         ret
-                    """
-            ,
-            Z_TO_STRING_CHAR, """
-        # a1 = código de carácter. Devuelve en a0 un string nuevo (en el heap) de 1 carácter.
-        __z_to_string_char:
-            la   t5, heap_ptr
-            ld   t4, 0(t5)
-            addi t3, t4, 8
-            sd   t3, 0(t5)
-            la   t6, heap
-            add  a0, t6, t4
-            sb   a1, 0(a0)
-            sb   zero, 1(a0)
-            ret
-        """,
+                    """),
 
-            Z_TO_STRING_BOOL, """
-        # a1 = 0 o 1. Devuelve en a0 un string nuevo (en el heap): "true" o "false".
-        __z_to_string_bool:
-            la   t5, heap_ptr
-            ld   t4, 0(t5)
-            addi t3, t4, 8
-            sd   t3, 0(t5)
-            la   t6, heap
-            add  a0, t6, t4
-            beq  a1, zero, __ztsb_falso
-            li   t0, 116
-            sb   t0, 0(a0)
-            li   t0, 114
-            sb   t0, 1(a0)
-            li   t0, 117
-            sb   t0, 2(a0)
-            li   t0, 101
-            sb   t0, 3(a0)
-            sb   zero, 4(a0)
-            ret
-        __ztsb_falso:
-            li   t0, 102
-            sb   t0, 0(a0)
-            li   t0, 97
-            sb   t0, 1(a0)
-            li   t0, 108
-            sb   t0, 2(a0)
-            li   t0, 115
-            sb   t0, 3(a0)
-            li   t0, 101
-            sb   t0, 4(a0)
-            sb   zero, 5(a0)
-            ret
-        """
+            Map.entry(Z_TO_STRING_CHAR, """
+                    # a1 = código de carácter. Devuelve a0 = string de 1 carácter.
+                    __z_to_string_char:
+                        la   t5, heap_ptr
+                        ld   t4, 0(t5)
+                        addi t3, t4, 8
+                        sd   t3, 0(t5)
+                        la   t6, heap
+                        add  a0, t6, t4
+                        sb   a1, 0(a0)
+                        sb   zero, 1(a0)
+                        ret
+                    """),
 
+            Map.entry(Z_TO_STRING_BOOL, """
+                    # a1 = 0 o 1. Devuelve a0 = "true" o "false".
+                    __z_to_string_bool:
+                        la   t5, heap_ptr
+                        ld   t4, 0(t5)
+                        addi t3, t4, 8
+                        sd   t3, 0(t5)
+                        la   t6, heap
+                        add  a0, t6, t4
+                        beq  a1, zero, __ztsb_falso
+                        li   t0, 116
+                        sb   t0, 0(a0)
+                        li   t0, 114
+                        sb   t0, 1(a0)
+                        li   t0, 117
+                        sb   t0, 2(a0)
+                        li   t0, 101
+                        sb   t0, 3(a0)
+                        sb   zero, 4(a0)
+                        ret
+                    __ztsb_falso:
+                        li   t0, 102
+                        sb   t0, 0(a0)
+                        li   t0, 97
+                        sb   t0, 1(a0)
+                        li   t0, 108
+                        sb   t0, 2(a0)
+                        li   t0, 115
+                        sb   t0, 3(a0)
+                        li   t0, 101
+                        sb   t0, 4(a0)
+                        sb   zero, 5(a0)
+                        ret
+                    """),
+
+            Map.entry(IMPRIMIR_DECIMAL, """
+                    # a0 = entero escalado por 10^6. Imprime <entero>.<6 decimales>.
+                    __imprimir_decimal:
+                        addi sp, sp, -96
+                        sd   ra, 88(sp)
+                        sd   s1, 80(sp)
+                        sd   s2, 72(sp)
+                        sd   s3, 64(sp)
+                        sd   s4, 56(sp)
+                        mv   s1, a0
+                        bge  s1, zero, __id_positivo
+                        li   t0, 45
+                        sb   t0, 0(sp)
+                        li   a0, 1
+                        mv   a1, sp
+                        li   a2, 1
+                        li   a7, 64
+                        ecall
+                        sub  s1, zero, s1
+                    __id_positivo:
+                        li   t1, 1000000
+                        remu s2, s1, t1
+                        divu s1, s1, t1
+                        mv   a0, s1
+                        jal  ra, __imprimir_entero
+                        li   t0, 46
+                        sb   t0, 0(sp)
+                        li   a0, 1
+                        mv   a1, sp
+                        li   a2, 1
+                        li   a7, 64
+                        ecall
+                        addi t1, sp, 40
+                        mv   t2, t1
+                        li   t3, 6
+                        mv   t4, s2
+                        li   t5, 10
+                    __id_ciclo:
+                        remu t6, t4, t5
+                        divu t4, t4, t5
+                        addi t6, t6, 48
+                        addi t2, t2, -1
+                        sb   t6, 0(t2)
+                        addi t3, t3, -1
+                        bne  t3, zero, __id_ciclo
+                        li   a0, 1
+                        mv   a1, t2
+                        li   a2, 6
+                        li   a7, 64
+                        ecall
+                        ld   ra, 88(sp)
+                        ld   s1, 80(sp)
+                        ld   s2, 72(sp)
+                        ld   s3, 64(sp)
+                        ld   s4, 56(sp)
+                        addi sp, sp, 96
+                        ret
+                    """),
+
+            Map.entry(Z_TO_STRING_DOUBLE, """
+                    # a1 = entero escalado por 10^6. Devuelve a0 = "<entero>.<6 decimales>".
+                    __z_to_string_double:
+                        addi sp, sp, -128
+                        sd   ra, 120(sp)
+                        sd   s1, 112(sp)
+                        sd   s2, 104(sp)
+                        sd   s3, 96(sp)
+                        sd   s4, 88(sp)
+                        sd   s5, 80(sp)
+                        la   t0, heap_ptr
+                        ld   t1, 0(t0)
+                        addi t2, t1, 32
+                        sd   t2, 0(t0)
+                        la   t3, heap
+                        add  s4, t3, t1
+                        mv   s1, a1
+                        mv   s5, s4
+                        bge  s1, zero, __ztsd_pos
+                        li   t0, 45
+                        sb   t0, 0(s5)
+                        addi s5, s5, 1
+                        sub  s1, zero, s1
+                    __ztsd_pos:
+                        li   t1, 1000000
+                        remu s2, s1, t1
+                        divu s3, s1, t1
+                        addi t1, sp, 64
+                        mv   t2, t1
+                        mv   t4, s3
+                        li   t5, 10
+                        beq  t4, zero, __ztsd_cero
+                    __ztsd_ent_ciclo:
+                        remu t6, t4, t5
+                        divu t4, t4, t5
+                        addi t6, t6, 48
+                        addi t2, t2, -1
+                        sb   t6, 0(t2)
+                        bne  t4, zero, __ztsd_ent_ciclo
+                        j    __ztsd_ent_copia
+                    __ztsd_cero:
+                        addi t2, t2, -1
+                        li   t6, 48
+                        sb   t6, 0(t2)
+                    __ztsd_ent_copia:
+                        lbu  t6, 0(t2)
+                        beq  t6, zero, __ztsd_ent_fin
+                        sb   t6, 0(s5)
+                        addi t2, t2, 1
+                        addi s5, s5, 1
+                        j    __ztsd_ent_copia
+                    __ztsd_ent_fin:
+                        li   t0, 46
+                        sb   t0, 0(s5)
+                        addi s5, s5, 1
+                        addi t1, sp, 76
+                        mv   t2, t1
+                        li   t3, 6
+                        mv   t4, s2
+                        li   t5, 10
+                    __ztsd_frac_ciclo:
+                        remu t6, t4, t5
+                        divu t4, t4, t5
+                        addi t6, t6, 48
+                        addi t2, t2, -1
+                        sb   t6, 0(t2)
+                        addi t3, t3, -1
+                        bne  t3, zero, __ztsd_frac_ciclo
+                        li   t3, 6
+                    __ztsd_frac_copia:
+                        lbu  t6, 0(t2)
+                        sb   t6, 0(s5)
+                        addi t2, t2, 1
+                        addi s5, s5, 1
+                        addi t3, t3, -1
+                        bne  t3, zero, __ztsd_frac_copia
+                        sb   zero, 0(s5)
+                        mv   a0, s4
+                        ld   ra, 120(sp)
+                        ld   s1, 112(sp)
+                        ld   s2, 104(sp)
+                        ld   s3, 96(sp)
+                        ld   s4, 88(sp)
+                        ld   s5, 80(sp)
+                        addi sp, sp, 128
+                        ret
+                    """),
+
+            Map.entry(LEER_DECIMAL, """
+                    # Devuelve a0 = entero escalado por 10^6, leído como decimal con signo y punto opcional.
+                    __leer_decimal:
+                        addi sp, sp, -48
+                        sd   ra, 40(sp)
+                        sd   s1, 32(sp)
+                        sd   s2, 24(sp)
+                        sd   s3, 16(sp)
+                        li   s1, 0
+                        li   s2, 0
+                        li   s3, 0
+                    __ld_saltar:
+                        jal  ra, __leer_caracter
+                        li   t0, 32
+                        beq  a0, t0, __ld_saltar
+                        li   t0, 10
+                        beq  a0, t0, __ld_saltar
+                        li   t0, 13
+                        beq  a0, t0, __ld_saltar
+                        li   t0, 9
+                        beq  a0, t0, __ld_saltar
+                        li   t0, 45
+                        bne  a0, t0, __ld_ent
+                        li   s3, 1
+                        jal  ra, __leer_caracter
+                    __ld_ent:
+                        li   t0, 48
+                        blt  a0, t0, __ld_punto
+                        li   t0, 57
+                        blt  t0, a0, __ld_punto
+                        addi a0, a0, -48
+                        li   t1, 10
+                        mul  s1, s1, t1
+                        add  s1, s1, a0
+                        jal  ra, __leer_caracter
+                        j    __ld_ent
+                    __ld_punto:
+                        li   t0, 46
+                        bne  a0, t0, __ld_fin
+                        jal  ra, __leer_caracter
+                    __ld_frac:
+                        li   t0, 48
+                        blt  a0, t0, __ld_fin
+                        li   t0, 57
+                        blt  t0, a0, __ld_fin
+                        addi a0, a0, -48
+                        li   t1, 10
+                        mul  s2, s2, t1
+                        add  s2, s2, a0
+                        jal  ra, __leer_caracter
+                        j    __ld_frac
+                    __ld_fin:
+                        li   t0, 6
+                        mv   t1, s2
+                        li   t2, 0
+                    __ld_contar:
+                        beq  t1, zero, __ld_escala
+                        li   t3, 10
+                        divu t1, t1, t3
+                        addi t2, t2, 1
+                        j    __ld_contar
+                    __ld_escala:
+                        li   t3, 6
+                        sub  t3, t3, t2
+                        beq  t3, zero, __ld_armar
+                        li   t4, 10
+                    __ld_mult:
+                        mul  s2, s2, t4
+                        addi t3, t3, -1
+                        bne  t3, zero, __ld_mult
+                    __ld_armar:
+                        li   t1, 1000000
+                        mul  s1, s1, t1
+                        add  s1, s1, s2
+                        beq  s3, zero, __ld_pos
+                        sub  s1, zero, s1
+                    __ld_pos:
+                        mv   a0, s1
+                        ld   ra, 40(sp)
+                        ld   s1, 32(sp)
+                        ld   s2, 24(sp)
+                        ld   s3, 16(sp)
+                        addi sp, sp, 48
+                        ret
+                    """)
     );
 
-    /**
-     * Devuelve el código de las rutinas pedidas (más las que dependen de ellas).
-     */
     static String generar(Set<String> usadas) {
         Set<String> todas = new LinkedHashSet<>(usadas);
-        if (todas.contains(LEER_ENTERO) || todas.contains(LEER_CADENA)) {
+        if (todas.contains(LEER_ENTERO) || todas.contains(LEER_CADENA) || todas.contains(LEER_DECIMAL)) {
             todas.add(LEER_CARACTER);
+        }
+        if (todas.contains(IMPRIMIR_DECIMAL)) {
+            todas.add(IMPRIMIR_ENTERO);
         }
         StringBuilder sb = new StringBuilder();
         for (String nombre : todas) {

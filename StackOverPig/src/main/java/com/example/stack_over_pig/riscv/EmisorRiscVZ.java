@@ -6,6 +6,7 @@ import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Continuar1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Romper1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.AccesoAtributo1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.LlamadaMetodo1;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.NewArreglo;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.NewObjeto;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.*;
@@ -169,6 +170,7 @@ public class EmisorRiscVZ {
         else if (c instanceof Llamada l) emitirLlamada(sb, l);
         else if (c instanceof LlamadaMetodo1 l) emitirLlamadaMetodo(sb, l);
         else if (c instanceof NewObjeto n) emitirNewObjeto(sb, n);
+        else if (c instanceof NewArreglo a) emitirNewArreglo(sb, a);
         else if (c instanceof Retorno1 r) emitirRetorno(sb, r, funcion);
         else if (c instanceof ConversionTipo ct) emitirConversion(sb, ct);
         else if (c instanceof ImprimirPig i) emitirImprimir(sb, i);
@@ -215,6 +217,59 @@ public class EmisorRiscVZ {
         }
 
         cargar(sb, o.getIzquierda(), IZQ, null);
+        // Aritmética con decimalis: al menos un operando decimalis → resultado decimalis
+        // (los enteros se escalan a decimalis antes de operar).
+        String tIzq = o.getIzquierda().getTipo();
+        String tDer = o.getDerecha().getTipo();
+        boolean izqDec = "decimalis".equals(tIzq);
+        boolean derDec = "decimalis".equals(tDer);
+        if (izqDec || derDec) {
+            cargar(sb, o.getIzquierda(), IZQ, null);
+            if (!izqDec) {
+                sb.append("    li   ").append(AUX).append(", 1000000\n");
+                sb.append("    mul  ").append(IZQ).append(", ").append(IZQ).append(", ").append(AUX).append("\n");
+            }
+            cargar(sb, o.getDerecha(), DER, null);
+            if (!derDec) {
+                sb.append("    li   ").append(AUX).append(", 1000000\n");
+                sb.append("    mul  ").append(DER).append(", ").append(DER).append(", ").append(AUX).append("\n");
+            }
+            switch (o.getOperador()) {
+                case "+" -> sb.append("    add  ").append(RES).append(", ").append(IZQ).append(", ").append(DER).append("\n");
+                case "-" -> sb.append("    sub  ").append(RES).append(", ").append(IZQ).append(", ").append(DER).append("\n");
+                case "*" -> {
+                    sb.append("    mul  ").append(RES).append(", ").append(IZQ).append(", ").append(DER).append("\n");
+                    sb.append("    li   ").append(AUX).append(", 1000000\n");
+                    sb.append("    div  ").append(RES).append(", ").append(RES).append(", ").append(AUX).append("\n");
+                }
+                case "/" -> {
+                    sb.append("    li   ").append(AUX).append(", 1000000\n");
+                    sb.append("    mul  ").append(IZQ).append(", ").append(IZQ).append(", ").append(AUX).append("\n");
+                    sb.append("    div  ").append(RES).append(", ").append(IZQ).append(", ").append(DER).append("\n");
+                }
+                case "<" -> sb.append("    slt  ").append(RES).append(", ").append(IZQ).append(", ").append(DER).append("\n");
+                case ">" -> sb.append("    slt  ").append(RES).append(", ").append(DER).append(", ").append(IZQ).append("\n");
+                case "<=" -> {
+                    sb.append("    slt  ").append(RES).append(", ").append(DER).append(", ").append(IZQ).append("\n");
+                    sb.append("    xori ").append(RES).append(", ").append(RES).append(", 1\n");
+                }
+                case ">=" -> {
+                    sb.append("    slt  ").append(RES).append(", ").append(IZQ).append(", ").append(DER).append("\n");
+                    sb.append("    xori ").append(RES).append(", ").append(RES).append(", 1\n");
+                }
+                case "==" -> {
+                    sb.append("    sub  ").append(RES).append(", ").append(IZQ).append(", ").append(DER).append("\n");
+                    sb.append("    sltiu ").append(RES).append(", ").append(RES).append(", 1\n");
+                }
+                case "!=" -> {
+                    sb.append("    sub  ").append(RES).append(", ").append(IZQ).append(", ").append(DER).append("\n");
+                    sb.append("    sltu ").append(RES).append(", zero, ").append(RES).append("\n");
+                }
+                default -> throw new UnsupportedOperationException("Operador decimalis: " + o.getOperador());
+            }
+            almacenar(sb, RES, o.getDestino());
+            return;
+        }
         cargar(sb, o.getDerecha(), DER, null);
 
         switch (o.getOperador()) {
@@ -267,9 +322,34 @@ public class EmisorRiscVZ {
     }
 
     private void emitirCondicional(StringBuilder sb, Condicional1 c) {
+        String dest = "L" + c.getEtiqueta();
+
+        if ("decimalis".equals(c.getIzquierda().getTipo())
+                || "decimalis".equals(c.getDerecha().getTipo())) {
+            cargar(sb, c.getIzquierda(), IZQ, null);
+            if (!"decimalis".equals(c.getIzquierda().getTipo())) {
+                sb.append("    li   ").append(AUX).append(", 1000000\n");
+                sb.append("    mul  ").append(IZQ).append(", ").append(IZQ).append(", ").append(AUX).append("\n");
+            }
+            cargar(sb, c.getDerecha(), DER, null);
+            if (!"decimalis".equals(c.getDerecha().getTipo())) {
+                sb.append("    li   ").append(AUX).append(", 1000000\n");
+                sb.append("    mul  ").append(DER).append(", ").append(DER).append(", ").append(AUX).append("\n");
+            }
+            switch (c.getOperador()) {
+                case "==" -> sb.append("    beq  ").append(IZQ).append(", ").append(DER).append(", ").append(dest).append("\n");
+                case "!=" -> sb.append("    bne  ").append(IZQ).append(", ").append(DER).append(", ").append(dest).append("\n");
+                case "<"  -> sb.append("    blt  ").append(IZQ).append(", ").append(DER).append(", ").append(dest).append("\n");
+                case ">=" -> sb.append("    bge  ").append(IZQ).append(", ").append(DER).append(", ").append(dest).append("\n");
+                case ">"  -> sb.append("    blt  ").append(DER).append(", ").append(IZQ).append(", ").append(dest).append("\n");
+                case "<=" -> sb.append("    bge  ").append(DER).append(", ").append(IZQ).append(", ").append(dest).append("\n");
+                default -> throw new UnsupportedOperationException("Comparador decimalis: " + c.getOperador());
+            }
+            return;
+        }
+
         cargar(sb, c.getIzquierda(), IZQ, null);
         cargar(sb, c.getDerecha(), DER, null);
-        String dest = "L" + c.getEtiqueta();
         switch (c.getOperador()) {
             case "==" -> sb.append("    beq  ").append(IZQ).append(", ").append(DER).append(", ").append(dest).append("\n");
             case "!=" -> sb.append("    bne  ").append(IZQ).append(", ").append(DER).append(", ").append(dest).append("\n");
@@ -338,6 +418,39 @@ public class EmisorRiscVZ {
         if (n.getDestino() != null) almacenar(sb, "a0", n.getDestino());
     }
 
+    private void emitirNewArreglo(StringBuilder sb, NewArreglo a) {
+        // IZQ = número de elementos
+        cargar(sb, a.getTamano(), IZQ, null);
+
+        // Bytes a reservar: IZQ * 8
+        sb.append("    slli ").append(IZQ).append(", ").append(IZQ).append(", 3\n");
+
+        // Reservar en el heap
+        sb.append("    la   ").append(DER).append(", heap_ptr\n");
+        sb.append("    ld   ").append(RES).append(", 0(").append(DER).append(")\n");
+        sb.append("    add  ").append(DIR).append(", ").append(RES).append(", ").append(IZQ).append("\n");
+        sb.append("    sd   ").append(DIR).append(", 0(").append(DER).append(")\n");
+        sb.append("    la   ").append(AUX).append(", heap\n");
+        sb.append("    add  ").append(AUX).append(", ").append(AUX).append(", ").append(RES).append("\n");
+
+        // Guardar la base en IDX (no se toca en el bucle)
+        sb.append("    mv   ").append(IDX).append(", ").append(AUX).append("\n");
+
+        // Inicializar a cero
+        sb.append("    srli ").append(IZQ).append(", ").append(IZQ).append(", 3\n");
+        int n = ctx.siguienteEtiqueta();
+        sb.append("Larr_ini_").append(n).append(":\n");
+        sb.append("    beq  ").append(IZQ).append(", zero, Larr_fin_").append(n).append("\n");
+        sb.append("    sd   zero, 0(").append(AUX).append(")\n");
+        sb.append("    addi ").append(AUX).append(", ").append(AUX).append(", 8\n");
+        sb.append("    addi ").append(IZQ).append(", ").append(IZQ).append(", -1\n");
+        sb.append("    j    Larr_ini_").append(n).append("\n");
+        sb.append("Larr_fin_").append(n).append(":\n");
+
+        // Guardar la dirección base en el destino
+        almacenar(sb, IDX, a.getDestino());
+    }
+
     private void emitirRetorno(StringBuilder sb, Retorno1 r, FuncionRiscV funcion) {
         if (r.getValor() != null) cargar(sb, r.getValor(), "a0", null);
         sb.append("    j    __epilogo_").append(funcion.nombre()).append("\n");
@@ -352,8 +465,7 @@ public class EmisorRiscVZ {
         String rutina = switch (i.getTipo()) {
             case "textum" -> RutinasConsola.IMPRIMIR_CADENA;
             case "littera" -> RutinasConsola.IMPRIMIR_CARACTER;
-            case "decimalis" -> throw new UnsupportedOperationException(
-                    "EmisorRiscVZ: escribir decimalis no soportado");
+            case "decimalis" -> RutinasConsola.IMPRIMIR_DECIMAL;
             default -> RutinasConsola.IMPRIMIR_ENTERO;
         };
         ctx.getRutinasUsadas().add(rutina);
@@ -378,8 +490,11 @@ public class EmisorRiscVZ {
                 sb.append("    jal  ra, ").append(RutinasConsola.LEER_CARACTER).append("\n");
                 almacenar(sb, "a0", l.getDestino());
             }
-            case "decimalis" -> throw new UnsupportedOperationException(
-                    "EmisorRiscVZ: leer decimalis no soportado");
+            case "decimalis" -> {
+                ctx.getRutinasUsadas().add(RutinasConsola.LEER_DECIMAL);
+                sb.append("    jal  ra, ").append(RutinasConsola.LEER_DECIMAL).append("\n");
+                almacenar(sb, "a0", l.getDestino());
+            }
             default -> {
                 ctx.getRutinasUsadas().add(RutinasConsola.LEER_ENTERO);
                 sb.append("    jal  ra, ").append(RutinasConsola.LEER_ENTERO).append("\n");
@@ -474,29 +589,81 @@ public class EmisorRiscVZ {
     }
 
     private void direccionBase(StringBuilder sb, AccesoMemoria base, String registro) {
-        if (!(base instanceof AccesoVariable v)) {
-            throw new UnsupportedOperationException(
-                    "EmisorRiscVZ: base de arreglo debe ser variable");
-        }
-        int off = offsetDe(v.getNombre());
-        if (esParametroPorReferencia(v.getNombre())) {
-            // El slot contiene un puntero al inicio del arreglo/struct.
-            if (cabe(off)) {
-                sb.append("    ld   ").append(registro).append(", ").append(off).append("(s0)\n");
+        if (base instanceof AccesoVariable v) {
+            int off = offsetDe(v.getNombre());
+            if (esParametroPorReferencia(v.getNombre())) {
+                // El slot contiene un puntero al inicio del arreglo/struct.
+                if (cabe(off)) {
+                    sb.append("    ld   ").append(registro).append(", ").append(off).append("(s0)\n");
+                } else {
+                    sb.append("    li   ").append(AUX).append(", ").append(off).append("\n");
+                    sb.append("    add  ").append(AUX).append(", s0, ").append(AUX).append("\n");
+                    sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
+                }
             } else {
-                sb.append("    li   ").append(AUX).append(", ").append(off).append("\n");
-                sb.append("    add  ").append(AUX).append(", s0, ").append(AUX).append("\n");
-                sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
+                // Variable local struct/arreglo: el slot ya es la dirección.
+                if (cabe(off)) {
+                    sb.append("    addi ").append(registro).append(", s0, ").append(off).append("\n");
+                } else {
+                    sb.append("    li   ").append(registro).append(", ").append(off).append("\n");
+                    sb.append("    add  ").append(registro).append(", s0, ").append(registro).append("\n");
+                }
             }
-        } else {
-            // Variable local struct/arreglo: el slot ya es la dirección.
-            if (cabe(off)) {
-                sb.append("    addi ").append(registro).append(", s0, ").append(off).append("\n");
-            } else {
-                sb.append("    li   ").append(registro).append(", ").append(off).append("\n");
-                sb.append("    add  ").append(registro).append(", s0, ").append(registro).append("\n");
+            return;
+        }
+        if (base instanceof AccesoAtributo1 attr) {
+            // Dirección del campo 'attr' (dentro de objeto Z o struct Y).
+            direccionCampo(sb, attr.getBase(), attr.getCampo(), registro);
+
+            // Si el campo es un arreglo *inline* (struct Y), la dirección del campo ya es la del arreglo.
+            // Si el campo es un *puntero* a arreglo (objeto Z), hay que cargarlo.
+            if (esCampoArregloPuntero(attr)) {
+                sb.append("    ld   ").append(registro).append(", 0(").append(registro).append(")\n");
+            }
+            return;
+        }
+        throw new UnsupportedOperationException(
+                "EmisorRiscVZ: base de arreglo no soportada: " + base.getClass().getSimpleName());
+    }
+
+    /**
+     * true si 'attr' es un campo de un objeto Z cuyo tipo es un arreglo por puntero
+     * (no inline). En Z, 'int[] x' es un puntero a un bloque creado con 'new int[n]'.
+     * En Y, 'flotante montos[10]' es un arreglo inline; su dirección ya es la del arreglo.
+     */
+    private boolean esCampoArregloPuntero(AccesoAtributo1 attr) {
+        String tipoObj = tipoDeBase(attr.getBase());
+        if (tipoObj == null) return false;
+        // 1. Clase Z: sus arreglos son punteros.
+        var clase = ctx.getTabla().buscarClase(tipoObj);
+        if (clase.isPresent()) {
+            var a = clase.get().atributos().get(attr.getCampo());
+            return a != null && a.dimensiones() > 0;
+        }
+        // 2. Struct Y: sus arreglos son inline.
+        return false;
+    }
+
+    /** Tipo Pig del receptor de un acceso a atributo ('this', una variable, o un atributo encadenado). */
+    private String tipoDeBase(AccesoMemoria base) {
+        if (base instanceof AccesoVariable v) {
+            if (v.getNombre().equals("this")) return tipoClaseActual;
+            return tipoDeVariable(v.getNombre());
+        }
+        if (base instanceof AccesoAtributo1 at) {
+            String tipoPadre = tipoDeBase(at.getBase());
+            if (tipoPadre == null) return null;
+            var clase = ctx.getTabla().buscarClase(tipoPadre);
+            if (clase.isPresent()) {
+                var a = clase.get().atributos().get(at.getCampo());
+                if (a != null) return a.tipo();
+            }
+            var est = ctx.getTabla().buscarEstructura(tipoPadre);
+            if (est.isPresent()) {
+                return est.get().atributos().get(at.getCampo());
             }
         }
+        return null;
     }
 
     /** true si el nombre corresponde a un parámetro Y declarado como [] T arr o {} T p. */
@@ -604,8 +771,14 @@ public class EmisorRiscVZ {
                 String etq = etiquetaCadena(String.valueOf(valor));
                 sb.append("    la   ").append(registro).append(", ").append(etq).append("\n");
             }
-            case "decimalis" -> throw new UnsupportedOperationException(
-                    "EmisorRiscVZ: literales decimalis no soportados");
+            case "decimalis" -> {
+                long escalado;
+                if (valor instanceof Double d) escalado = Math.round(d * 1_000_000L);
+                else if (valor instanceof Float f) escalado = Math.round(f * 1_000_000L);
+                else if (valor instanceof Number n) escalado = Math.round(n.doubleValue() * 1_000_000L);
+                else escalado = Math.round(Double.parseDouble(valor.toString()) * 1_000_000L);
+                sb.append("    li   ").append(registro).append(", ").append(escalado).append("\n");
+            }
             case "null" -> sb.append("    li   ").append(registro).append(", 0\n");
             default -> throw new IllegalArgumentException("Tipo literal: " + l.getTipo());
         }
@@ -652,6 +825,7 @@ public class EmisorRiscVZ {
         String rutina = switch (tipo == null ? "" : tipo) {
             case "littera" -> RutinasConsola.Z_TO_STRING_CHAR;
             case "bool"    -> RutinasConsola.Z_TO_STRING_BOOL;
+            case "decimalis" -> RutinasConsola.Z_TO_STRING_DOUBLE;
             default        -> RutinasConsola.Z_TO_STRING_INT;
         };
         ctx.getRutinasUsadas().add(rutina);

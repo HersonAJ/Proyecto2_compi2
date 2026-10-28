@@ -6,6 +6,7 @@ import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Continuar1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Romper1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.AccesoAtributo1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.LlamadaMetodo1;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.NewArreglo;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.NewObjeto;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.*;
@@ -186,7 +187,8 @@ public class EmisorRiscV {
         else if (c instanceof Salto s) emitirSalto(s.getEtiqueta());
         else if (c instanceof DefinicionEtiqueta e) etiqueta("L" + e.getEtiqueta());
         else if (c instanceof Llamada l) emitirLlamada(l);
-        else if (c instanceof NewObjeto n) emitirNewObjeto(n);          // ← nuevo
+        else if (c instanceof NewObjeto n) emitirNewObjeto(n);
+        else if (c instanceof NewArreglo a) emitirNewArreglo(a);        // ← nuevo
         else if (c instanceof LlamadaMetodo1 lm) emitirLlamadaMetodo(lm); // ← nuevo
         else if (c instanceof Retorno1 r) emitirRetorno(r);
         else if (c instanceof ConversionTipo ct) emitirConversion(ct);
@@ -196,6 +198,28 @@ public class EmisorRiscV {
         else if (c instanceof Romper1 romp) emitirSalto(romp.getEtiqueta());
         else throw new UnsupportedOperationException(
                     "EmisorRiscV: cuarteta no soportada: " + c.getClass().getSimpleName());
+    }
+
+    private void emitirNewArreglo(NewArreglo a) {
+        cargar(a.getTamano(), IZQ);
+        linea("slli %s, %s, 3", IZQ, IZQ);
+        linea("la   %s, heap_ptr", DER);
+        linea("ld   %s, 0(%s)", RES, DER);
+        linea("add  %s, %s, %s", DIR, RES, IZQ);
+        linea("sd   %s, 0(%s)", DIR, DER);
+        linea("la   %s, heap", AUX);
+        linea("add  %s, %s, %s", AUX, AUX, RES);
+        linea("mv   %s, %s", IDX, AUX);
+        linea("srli %s, %s, 3", IZQ, IZQ);
+        int n = ctx.siguienteEtiqueta();
+        etiqueta("Larr_ini_" + n);
+        linea("beq  %s, zero, Larr_fin_%d", IZQ, n);
+        linea("sd   zero, 0(%s)", AUX);
+        linea("addi %s, %s, 8", AUX, AUX);
+        linea("addi %s, %s, -1", IZQ, IZQ);
+        linea("j    Larr_ini_%d", n);
+        etiqueta("Larr_fin_" + n);
+        almacenar(IDX, a.getDestino());
     }
 
     private void emitirAsignacion(AsignacionVariable a) {
@@ -308,8 +332,7 @@ public class EmisorRiscV {
         String rutina = switch (i.getTipo()) {
             case "textum" -> RutinasConsola.IMPRIMIR_CADENA;
             case "littera" -> RutinasConsola.IMPRIMIR_CARACTER;
-            case "decimalis" -> throw new UnsupportedOperationException(
-                    "EmisorRiscV: decimalis no soportado (punto flotante)");
+            case "decimalis" -> RutinasConsola.IMPRIMIR_DECIMAL;
             default -> RutinasConsola.IMPRIMIR_ENTERO;
         };
         ctx.getRutinasUsadas().add(rutina);
@@ -334,8 +357,11 @@ public class EmisorRiscV {
                 linea("jal  ra, %s", RutinasConsola.LEER_CARACTER);
                 almacenar("a0", l.getDestino());
             }
-            case "decimalis" -> throw new UnsupportedOperationException(
-                    "EmisorRiscV: decimalis no soportado");
+            case "decimalis" -> {
+                ctx.getRutinasUsadas().add(RutinasConsola.LEER_DECIMAL);
+                linea("jal  ra, %s", RutinasConsola.LEER_DECIMAL);
+                almacenar("a0", l.getDestino());
+            }
             default -> {
                 ctx.getRutinasUsadas().add(RutinasConsola.LEER_ENTERO);
                 linea("jal  ra, %s", RutinasConsola.LEER_ENTERO);
@@ -359,9 +385,28 @@ public class EmisorRiscV {
             linea("add  %s, %s, %s", DIR, DIR, registro);
             linea("ld   %s, 0(%s)", registro, DIR);
         } else {
+            // Struct por valor: la dirección de la variable es la dirección del struct.
+            // Primitivo o puntero a objeto: cargar el valor.
             Ubicacion u = ubicar(acc);
-            accesoPila("ld", registro, u);
+            boolean esStruct = esStructPorValor(acc);
+            if (esStruct) {
+                if (cabe(u.offset())) {
+                    linea("addi %s, s0, %d   # &%s", registro, u.offset(), u.nombre());
+                } else {
+                    linea("li   %s, %d", registro, u.offset());
+                    linea("add  %s, s0, %s   # &%s", registro, registro, u.nombre());
+                }
+            } else {
+                accesoPila("ld", registro, u);
+            }
         }
+    }
+
+    /** true si 'acc' es una variable local de tipo struct por valor (no un objeto/puntero). */
+    private boolean esStructPorValor(AccesoMemoria acc) {
+        if (!(acc instanceof AccesoVariable v)) return false;
+        TablaSimbolosPig.SimboloVariable s = tabla.buscarVariable(v.getNombre()).orElse(null);
+        return s != null && s.esEstructura();
     }
 
     private void almacenar(String registro, AccesoMemoria destino) {
@@ -408,8 +453,14 @@ public class EmisorRiscV {
             case "bool" -> linea("li   %s, %d", registro, esVerdadero(valor) ? 1 : 0);
             case "littera" -> linea("li   %s, %d", registro, codigoCaracter(valor));
             case "textum" -> linea("la   %s, %s", registro, etiquetaCadena(String.valueOf(valor)));
-            case "decimalis" -> throw new UnsupportedOperationException(
-                    "EmisorRiscV: literales decimalis no soportados");
+            case "decimalis" -> {
+                long escalado;
+                if (valor instanceof Double d) escalado = Math.round(d * 1_000_000L);
+                else if (valor instanceof Float f) escalado = Math.round(f * 1_000_000L);
+                else if (valor instanceof Number n) escalado = Math.round(n.doubleValue() * 1_000_000L);
+                else escalado = Math.round(Double.parseDouble(valor.toString()) * 1_000_000L);
+                linea("li   %s, %d", registro, escalado);
+            }
             case "null" -> linea("li   %s, 0", registro);
             default -> throw new IllegalArgumentException("Tipo literal: " + l.getTipo());
         }

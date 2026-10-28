@@ -360,7 +360,8 @@ public class ValidadorImportacionesPig {
     private void registrarClaseZ(NodoClase clase, TablaSimbolosZ tablaZ) {
         Map<String, TablaSimbolosPig.AtributoClase> atributos = new LinkedHashMap<>();
         for (NodoAtributoZ a : clase.atributos()) {
-            atributos.put(a.nombre(), new TablaSimbolosPig.AtributoClase(a.nombre(), tipoZaPig(a.tipo()), 0));
+            atributos.put(a.nombre(),
+                    new TablaSimbolosPig.AtributoClase(a.nombre(), tipoZaPig(a.tipo()), a.dimensiones()));
         }
 
         List<TablaSimbolosPig.Firma> constructores = new ArrayList<>();

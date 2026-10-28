@@ -336,8 +336,8 @@ public class GeneradorCuartetasZ {
     private void visitarExpresion(NodoExpr e) {
         switch (e.tipoNodo()) {
             case LITERAL_ENTERO -> ultimoResultado = new Literal(((NodoExpr.LiteralEntero) e).valor(), "numerus");
-            case LITERAL_DECIMAL -> throw new UnsupportedOperationException(
-                    "GeneradorCuartetasZ: decimalis no soportado (punto flotante)");
+            case LITERAL_DECIMAL -> ultimoResultado =
+                    new Literal(((NodoExpr.LiteralDecimal) e).valor(), "decimalis");
             case LITERAL_CADENA -> ultimoResultado = new Literal(((NodoExpr.LiteralCadena) e).valor(), "textum");
             case LITERAL_CARACTER -> ultimoResultado = new Literal(((NodoExpr.LiteralCaracter) e).valor(), "littera");
             case LITERAL_BOOL -> ultimoResultado = new Literal(((NodoExpr.LiteralBool) e).valor(), "bool");
@@ -607,7 +607,15 @@ public class GeneradorCuartetasZ {
     private static String tipoBinario(String tipoIzq, String operador, String tipoDer) {
         return switch (operador) {
             case "<", ">", "<=", ">=", "==", "!=", "&&", "||" -> "bool";
-            case "+" -> ("textum".equals(tipoIzq) || "textum".equals(tipoDer)) ? "textum" : "numerus";
+            case "+" -> {
+                if ("textum".equals(tipoIzq) || "textum".equals(tipoDer)) yield "textum";
+                if ("decimalis".equals(tipoIzq) || "decimalis".equals(tipoDer)) yield "decimalis";
+                yield "numerus";
+            }
+            case "-", "*", "/", "%" -> {
+                if ("decimalis".equals(tipoIzq) || "decimalis".equals(tipoDer)) yield "decimalis";
+                yield "numerus";
+            }
             default -> "numerus";
         };
     }
@@ -666,8 +674,32 @@ public class GeneradorCuartetasZ {
                 var firma = resolverSobrecarga(tabla.getMetodosEnPadre(tipoClase, ls.nombre()), tiposArgs, ls.nombre());
                 yield firma != null && firma.tipoRetorno() != null ? tipoZaPig(firma.tipoRetorno()) : "numerus";
             }
+            case ACCESO_ARRAY -> {
+                NodoExpr.AccesoArray aa = (NodoExpr.AccesoArray) e;
+                yield tipoElementoDeArreglo(aa.arreglo());
+            }
             default -> "numerus";
         };
+    }
+
+    /** Tipo de los elementos de un arreglo cuya expresión base es 'arreglo'. */
+    private String tipoElementoDeArreglo(NodoExpr arreglo) {
+        // 1. Identificador: variable local o parámetro.
+        if (arreglo instanceof NodoExpr.Identificador id) {
+            String t = tiposVariables.get(id.nombre());
+            if (t != null) return t;
+            var attr = tabla.buscarAtributoEn(tipoClase, id.nombre());
+            if (attr.isPresent()) return tipoZaPig(attr.get().tipo());
+            return "numerus";
+        }
+        // 2. Acceso a atributo: this.arr o expr.arr → tipo del atributo.
+        if (arreglo instanceof NodoExpr.AccesoAtributo at) {
+            String tipoObj = tipoPigDeExpresion(at.objeto());
+            var attr = tabla.buscarAtributoEn(tipoObj, at.atributo());
+            if (attr.isPresent()) return tipoZaPig(attr.get().tipo());
+            return "numerus";
+        }
+        return "numerus";
     }
 
     /**

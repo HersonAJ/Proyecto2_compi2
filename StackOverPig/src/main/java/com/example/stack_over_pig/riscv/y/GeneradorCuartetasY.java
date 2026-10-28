@@ -256,8 +256,8 @@ public class GeneradorCuartetasY {
         switch (e.tipoNodo()) {
             case LITERAL_ENTERO -> ultimoResultado =
                     new Literal(((NodoExpr.LiteralEntero) e).valor(), "numerus");
-            case LITERAL_FLOTANTE -> throw new UnsupportedOperationException(
-                    "GeneradorCuartetasY: flotante no soportado en esta tanda");
+            case LITERAL_FLOTANTE -> ultimoResultado =
+                    new Literal(((NodoExpr.LiteralFlotante) e).valor(), "decimalis");
             case LITERAL_CADENA -> ultimoResultado =
                     new Literal(((NodoExpr.LiteralCadena) e).valor(), "textum");
             case LITERAL_CARACTER -> ultimoResultado =
