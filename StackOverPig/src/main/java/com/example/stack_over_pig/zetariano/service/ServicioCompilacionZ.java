@@ -94,7 +94,7 @@ public class ServicioCompilacionZ {
                                                   Map<String, TablaSimbolosZ.DefinicionClaseExterna> externas,
                                                   String paquete) {
 
-        // 1. LEXER (Z no necesita preprocesador de indentacion: usa llaves y ';' como Java)
+        // 1. LEXER
         List<ErrorPosicional> erroresLexicos = new ArrayList<>();
 
         ZLexer lexer = new ZLexer(CharStreams.fromString(codigoFuente));

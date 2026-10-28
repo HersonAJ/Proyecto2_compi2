@@ -163,6 +163,11 @@ public class TablaSimbolosPig {
         return jerarquia.esSubtipo(sub, sup);
     }
 
+    /** La clase y sus ancestros, de la más derivada a la raíz. */
+    public List<String> cadenaDe(String clase) {
+        return jerarquia.cadena(clase);
+    }
+
     //Consultas
 
     //devuelve tru si el nombre corresponde a algun simbolo importado

@@ -126,8 +126,6 @@ public class ValidadorTiposPig {
             }
 
             case LITERAL_NULO -> {
-                // 'null' sin tipo contextual: solo es válido en declaraciones con tipo explícito,
-                // que se manejan aparte. Aquí devolvemos null para no propagar un tipo falso.
                 yield null;
             }
             case LISTA_LITERAL -> {
@@ -168,7 +166,9 @@ public class ValidadorTiposPig {
             }
             case "==", "!=" -> {
                 boolean compatibles = izq.base().equals(der.base())
-                        || (esNumerico(izq.base()) && esNumerico(der.base()));
+                        || (esNumerico(izq.base()) && esNumerico(der.base()))
+                        || esSubtipoClase(izq.base(), der.base())
+                        || esSubtipoClase(der.base(), izq.base());
                 if (compatibles) yield new TipoResuelto(BOOL, 0);
                 reportarIncompatible(operador, izq, der, linea, columna);
                 yield null;
@@ -204,10 +204,22 @@ public class ValidadorTiposPig {
     public boolean esAsignable(TipoResuelto destino, TipoResuelto origen) {
         if (destino.dimensiones() != origen.dimensiones()) return false;
         if (destino.dimensiones() > 0) {
-            return sonTiposEquivalentes(destino.base(), origen.base());
+            return sonTiposEquivalentes(destino.base(), origen.base())
+                    || esSubtipoClase(origen.base(), destino.base());
         }
         if (sonTiposEquivalentes(destino.base(), origen.base())) return true;
-        return DECIMALIS.equals(destino.base()) && NUMERUS.equals(origen.base());
+        if (DECIMALIS.equals(destino.base()) && NUMERUS.equals(origen.base())) return true;
+        return esSubtipoClase(origen.base(), destino.base());
+    }
+
+    /** True si 'origen' es la misma clase que 'destino' o una subclase suya (herencia Z). */
+    private boolean esSubtipoClase(String origen, String destino) {
+        if (origen == null || destino == null) return false;
+        if (origen.equals(destino)) return true;
+        if (tabla.buscarClase(origen).isEmpty() || tabla.buscarClase(destino).isEmpty()) {
+            return false;
+        }
+        return tabla.esSubtipo(origen, destino);
     }
 
     /** True si dos tipos son equivalentes entre lenguajes (numerus ↔ int ↔ entero). */
@@ -226,7 +238,7 @@ public class ValidadorTiposPig {
             case "textum", "cadena", "String" -> "TEXTO";
             case "littera", "caracter", "char" -> "CARACTER";
             case "bool", "boolean" -> "BOOLEANO";
-            default -> tipo; // estructuras, clases, etc.
+            default -> tipo;
         };
     }
 

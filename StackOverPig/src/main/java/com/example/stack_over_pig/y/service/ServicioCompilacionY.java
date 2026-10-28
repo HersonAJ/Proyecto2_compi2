@@ -208,7 +208,7 @@ public class ServicioCompilacionY {
                 exitoso,
                 programa,
                 codigoPreprocesado,
-                tabla,                     // ← ahora ya no es null
+                tabla,
                 List.of(),
                 List.of(),
                 erroresSemanticos,

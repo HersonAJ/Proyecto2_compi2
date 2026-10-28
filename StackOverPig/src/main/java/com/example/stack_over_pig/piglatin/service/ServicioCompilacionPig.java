@@ -105,15 +105,6 @@ public class ServicioCompilacionPig {
                     funciones.add(new GeneradorCuartetasZ(tablaZ, clase.nombre()).generarConstructor(c));
                 }
                 for (NodoMetodo m : clase.metodos()) {
-                    if (clase.nombre().equals("CuentaCorriente")) {
-                        System.out.println("=== DEBUG CuentaCorriente: métodos de Cuenta ===");
-                        System.out.println("  getMetodosDe(\"CuentaCorriente\", \"ajustarSaldo\") = " +
-                                tablaZ.getMetodosDe("CuentaCorriente", "ajustarSaldo").size());
-                        System.out.println("  getMetodosDe(\"Cuenta\", \"ajustarSaldo\") = " +
-                                tablaZ.getMetodosDe("Cuenta", "ajustarSaldo").size());
-                        System.out.println("  buscarClaseExterna(\"Cuenta\").isPresent() = " +
-                                tablaZ.buscarClaseExterna("Cuenta").isPresent());
-                    }
                     funciones.add(new GeneradorCuartetasZ(tablaZ, clase.nombre()).generarMetodo(m));
                 }
             }
@@ -289,12 +280,10 @@ public class ServicioCompilacionPig {
             int num = e.getValue();
             var def = tabla.buscarClase(clase);
             if (def.isPresent()) {
-                //int tamanoClase = 8 * def.get().atributos().size();
                 int tamanoClase = new DisposicionObjetos(tabla).tamano(clase);
                 total += num * tamanoClase;
             }
         }
-        //return total;
         return Math.max(total + 1024, 65536);
     }
 

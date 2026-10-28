@@ -85,9 +85,19 @@ public class ValidadorObjetosPig {
             tiposArgs.add(tipos.tipoDeExpresion(arg));
         }
 
-        // 4. Buscar un metodo que coincida.
+        // 4. Recoger las sobrecargas del metodo en la clase y en sus ancestros.
+        List<TablaSimbolosPig.Firma> firmas = new ArrayList<>();
+        for (String c : tabla.cadenaDe(tipoObjeto.base())) {
+            Optional<TablaSimbolosPig.DefinicionClase> defOpt = tabla.buscarClase(c);
+            if (defOpt.isEmpty()) continue;
+            for (TablaSimbolosPig.Firma f : defOpt.get().metodos()) {
+                if (f.nombre().equals(llamada.nombre())) firmas.add(f);
+            }
+        }
+
+        // 5. Buscar la firma que coincida.
         TablaSimbolosPig.Firma firma = resolverSobrecarga(
-                clase.metodos(), tiposArgs,
+                firmas, tiposArgs,
                 llamada.linea(), llamada.columna(), llamada.nombre(), "Método");
 
         if (firma == null) return null;
@@ -115,7 +125,13 @@ public class ValidadorObjetosPig {
         }
 
         TablaSimbolosPig.DefinicionClase clase = claseOpt.get();
-        TablaSimbolosPig.AtributoClase atributo = clase.atributos().get(acceso.atributo());
+        TablaSimbolosPig.AtributoClase atributo = null;
+        for (String c : tabla.cadenaDe(tipoObjeto.base())) {
+            Optional<TablaSimbolosPig.DefinicionClase> defOpt = tabla.buscarClase(c);
+            if (defOpt.isEmpty()) continue;
+            TablaSimbolosPig.AtributoClase a = defOpt.get().atributos().get(acceso.atributo());
+            if (a != null) { atributo = a; break; }
+        }
 
         if (atributo == null) {
             errores.add(new ErrorSemantico(acceso.linea(), acceso.columna(),
@@ -209,8 +225,6 @@ public class ValidadorObjetosPig {
     /** Valida 'null : Tipo' en una declaración. El tipo debe ser una clase. */
     public void validarNulo(NodoSentencia.DeclaracionVariable d) {
         if (!(d.inicializacion() instanceof NodoExpr.LiteralNulo)) return;
-
-        // Si 'tipo' es null, la gramática permitió 'null' sin tipo; ya debería fallar en el parser.
         if (d.tipo() == null) {
             errores.add(new ErrorSemantico(d.linea(), d.columna(),
                     "Tipo requerido",
