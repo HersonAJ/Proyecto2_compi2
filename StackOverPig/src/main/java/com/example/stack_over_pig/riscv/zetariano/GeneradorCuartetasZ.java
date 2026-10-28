@@ -12,7 +12,7 @@ import com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ;
 import java.util.*;
 
 /**
- * Recorre el AST de Zetariano (constructor o método) y emite cuartetas.
+ * Recorre el AST de Zetariano (constructor o metodo) y emite cuartetas.
  * Produce un FuncionRiscV con el nombre RISC-V, parámetros, tipos de variables y cuartetas.
  *
  * Todos los tipos que viajan en las cuartetas están en vocabulario Pig
@@ -413,6 +413,11 @@ public class GeneradorCuartetasZ {
         visitarExpresion(a.objeto());
         AccesoMemoria obj = ultimoResultado;
         String tipoObj = tipoPigDeExpresion(a.objeto());
+        if (!(obj instanceof AccesoVariable || obj instanceof AccesoTemporal)) {
+            AccesoTemporal tObj = nuevoTemporal(tipoObj);
+            gestor.emitir(new AsignacionVariable(tObj, obj));
+            obj = tObj;
+        }
 
         var attrOpt = tabla.buscarAtributoEn(tipoObj, a.atributo());
         if (attrOpt.isEmpty()) {

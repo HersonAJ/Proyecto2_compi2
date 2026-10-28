@@ -419,6 +419,14 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
                     .orElse("numerus");
         }
 
+        if (expr instanceof NodoExpr.LlamadaFuncion lf) {
+            var def = tabla.buscarFuncion(lf.nombre());
+            if (def.isPresent() && def.get().tipoRetorno() != null) {
+                return def.get().tipoRetorno();
+            }
+            return "numerus";
+        }
+
         return "numerus";
     }
 
@@ -531,6 +539,9 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
                 .orElseThrow(() -> new IllegalStateException(
                         "GeneradorCuartetasPig: constructor no encontrado en " + inst.tipoClase()
                                 + " para argumentos " + tiposArgs));
+        for (int i = 0; i < args.size(); i++) {
+            args.set(i, adaptarArgumento(args.get(i), tiposArgs.get(i), tiposParam.get(i)));
+        }
         String nombre = DisposicionObjetos.nombreConstructor(inst.tipoClase(), tiposParam);
 
         // 3. Temporal para el objeto.
@@ -549,34 +560,53 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         AccesoMemoria receptor = ultimoResultado;
         String tipoObj = tipoPigLatinDe(llamada.objeto());
 
-        // 2. Evaluar argumentos.
-        List<AccesoMemoria> args = new ArrayList<>();
+        System.out.println("[DEBUG] metodo=" + llamada.nombre()
+                + " receptor=" + llamada.objeto()
+                + " tipoObj=" + tipoObj);
         List<String> tiposArgs = new ArrayList<>();
         for (NodoExpr arg : llamada.argumentos()) {
-            arg.aceptar(this);
-            args.add(ultimoResultado);
             tiposArgs.add(tipoPigLatinDe(arg));
         }
-
-        // 3. Resolver el metodo en la clase o en sus ancestros.
         DisposicionObjetos.MetodoResuelto metodo = disposicion
                 .buscarMetodo(tipoObj, llamada.nombre(), tiposArgs)
                 .orElseThrow(() -> new IllegalStateException(
                         "GeneradorCuartetasPig: método no encontrado: " + llamada.nombre() + " en " + tipoObj));
         TablaSimbolosPig.Firma firma = metodo.firma();
 
-        // 4. Nombre ClaseDeclarante_metodo_<tipos de los parámetros declarados>.
+        // 3. Evaluar argumentos.
+        List<AccesoMemoria> args = new ArrayList<>();
+        for (NodoExpr arg : llamada.argumentos()) {
+            arg.aceptar(this);
+            args.add(ultimoResultado);
+        }
+
+        // 4. Adaptar cada argumento al tipo declarado del parámetro (promoción num→decimal).
+        for (int i = 0; i < args.size(); i++) {
+            args.set(i, adaptarArgumento(args.get(i), tiposArgs.get(i), firma.parametros().get(i).tipo()));
+        }
+
+        // 5. Nombre ClaseDeclarante_metodo_<tipos de los parámetros declarados>.
         String nombreRiscV = DisposicionObjetos.nombreMetodo(metodo.claseDeclarante(), llamada.nombre(), firma);
 
-        // 5. Temporal para el retorno.
+        // 6. Temporal para el retorno.
         int idT = gestor.getContador().siguienteTemporal(
                 firma.tipoRetorno() != null ? firma.tipoRetorno() : "void");
         AccesoTemporal t = new AccesoTemporal(idT,
                 firma.tipoRetorno() != null ? firma.tipoRetorno() : "void");
 
-        // 6. Emitir LlamadaMetodo1.
-        gestor.emitir(new LlamadaMetodo1(t, receptor, nombreRiscV.toString(), args));
+        // 7. Emitir LlamadaMetodo1.
+        gestor.emitir(new LlamadaMetodo1(t, receptor, nombreRiscV, args));
         ultimoResultado = firma.tipoRetorno() != null ? t : null;
+    }
+
+    private AccesoMemoria adaptarArgumento(AccesoMemoria arg, String tipoArg, String tipoParam) {
+        if (!"numerus".equals(tipoArg) || !"decimalis".equals(tipoParam)) return arg;
+        if (arg instanceof Literal l && l.getValor() instanceof Number n) {
+            return new Literal(n.doubleValue(), "decimalis");
+        }
+        AccesoTemporal t = new AccesoTemporal(gestor.getContador().siguienteTemporal("decimalis"), "decimalis");
+        gestor.emitir(new OperacionBinaria(t, arg, "*", new Literal(1000000, "numerus")));
+        return t;
     }
 
     @Override

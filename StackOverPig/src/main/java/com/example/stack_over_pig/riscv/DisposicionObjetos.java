@@ -125,6 +125,7 @@ public class DisposicionObjetos {
             String esperado = parametros.get(i).tipo();
             String recibido = tiposArgs.get(i);
             if (esperado.equals(recibido)) continue;
+            if ("decimalis".equals(esperado) && "numerus".equals(recibido)) continue;
             if (exacto) return false;
             boolean ambasClases = tabla.buscarClase(esperado).isPresent() && tabla.buscarClase(recibido).isPresent();
             if (ambasClases && tabla.esSubtipo(recibido, esperado)) continue;

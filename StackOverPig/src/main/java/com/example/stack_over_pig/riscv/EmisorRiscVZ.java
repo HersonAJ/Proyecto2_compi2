@@ -790,6 +790,10 @@ public class EmisorRiscVZ {
             tipoClase = tipoDeVariable(v.getNombre());
             offObjeto = offsetDe(v.getNombre());
             porReferencia = esParametroPorReferencia(v.getNombre());
+
+        } else if (base instanceof AccesoTemporal t) {
+            tipoClase = t.getTipo();
+            offObjeto = offsetDe("t" + t.getNumero());
         } else {
             throw new UnsupportedOperationException(
                     "EmisorRiscVZ: base de atributo debe ser 'this' o una variable");

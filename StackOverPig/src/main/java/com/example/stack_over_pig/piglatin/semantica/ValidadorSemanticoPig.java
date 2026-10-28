@@ -257,9 +257,15 @@ public class ValidadorSemanticoPig {
     }
 
     // HELPERS
-    /** True si la declaración inicializa con 'novus'. */
+
     private boolean esInstanciaDeObjeto(NodoSentencia.DeclaracionVariable d) {
-        return d.inicializacion() instanceof NodoExpr.InstanciaObjeto;
+        if (d.inicializacion() instanceof NodoExpr.InstanciaObjeto) {
+            return true;
+        }
+        if (d.inicializacion() instanceof NodoExpr.LiteralNulo && d.tipo() != null) {
+            return tabla.buscarClase(d.tipo()).isPresent();
+        }
+        return false;
     }
 
     public List<ErrorSemantico> getErrores() { return errores; }

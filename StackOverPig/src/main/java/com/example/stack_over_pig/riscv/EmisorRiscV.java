@@ -384,7 +384,8 @@ public class EmisorRiscV {
         } else {
             Ubicacion u = ubicar(acc);
             boolean esStruct = esStructPorValor(acc);
-            if (esStruct) {
+            boolean esArreglo = esArregloEnPila(acc);
+            if (esStruct || esArreglo) {
                 if (cabe(u.offset())) {
                     linea("addi %s, s0, %d   # &%s", registro, u.offset(), u.nombre());
                 } else {
@@ -395,6 +396,12 @@ public class EmisorRiscV {
                 accesoPila("ld", registro, u);
             }
         }
+    }
+
+    private boolean esArregloEnPila(AccesoMemoria acc) {
+        if (!(acc instanceof AccesoVariable v)) return false;
+        var s = tabla.buscarVariable(v.getNombre());
+        return s.isPresent() && s.get().dimensiones() > 0;
     }
 
     private boolean esStructPorValor(AccesoMemoria acc) {

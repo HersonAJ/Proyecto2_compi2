@@ -168,15 +168,15 @@ expr
     | LLAVE_A listaExpr? LLAVE_C                                # exprLiteralCompuesto
     | (INC | DEC) ID                                            # exprIncDecPrefijo
     | ID (INC | DEC)                                            # exprIncDecPostfijo
+    | expr PUNTO ID PAR_A listaArgumentos? PAR_C                # exprLlamadaMetodo
+    | llamadaFuncion                                            # exprLlamada
+    | referencia                                                # exprReferencia
     | expr op=(MULT | DIV) expr                                 # exprMulDiv
     | expr op=(MAS | MENOS) expr                                # exprSumaResta
     | expr op=(MENOR | MAYOR | MENIG | MAYIG) expr              # exprRelacional
     | expr op=(IGUAL | DISTINTO) expr                           # exprIgualdad
     | expr AND expr                                             # exprAnd
     | expr OR expr                                              # exprOr
-    | expr PUNTO ID PAR_A listaArgumentos? PAR_C                # exprLlamadaMetodo
-    | llamadaFuncion                                            # exprLlamada
-    | referencia                                                # exprReferencia
     | INT                                                       # exprEntero
     | FLOAT                                                     # exprDecimal
     | STRING                                                    # exprTexto
