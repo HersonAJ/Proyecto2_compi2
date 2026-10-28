@@ -2,7 +2,6 @@ import com.example.stack_over_pig.piglatin.service.ResultadoCompilacionPig;
 import com.example.stack_over_pig.piglatin.service.ServicioCompilacionPig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import com.example.stack_over_pig.piglatin.riscv.EjecutorVenus;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

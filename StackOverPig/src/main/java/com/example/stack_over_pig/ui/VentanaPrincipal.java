@@ -1,6 +1,5 @@
 package com.example.stack_over_pig.ui;
 
-import com.example.stack_over_pig.piglatin.riscv.EjecutorVenus;
 import com.example.stack_over_pig.piglatin.service.ResultadoCompilacionPig;
 import com.example.stack_over_pig.piglatin.service.ServicioCompilacionPig;
 import com.example.stack_over_pig.ui.modelo.Lenguaje;
@@ -8,7 +7,6 @@ import com.example.stack_over_pig.y.errores.ErrorPosicional;
 import com.example.stack_over_pig.y.errores.ResultadoCompilacionY;
 import com.example.stack_over_pig.y.semantica.error.ErrorSemantico;
 import com.example.stack_over_pig.y.service.ServicioCompilacionY;
-import com.example.stack_over_pig.zetariano.semantica.TablaSimbolosZ;
 import com.example.stack_over_pig.zetariano.service.ResultadoCompilacionZ;
 import com.example.stack_over_pig.zetariano.service.ServicioCompilacionZ;
 import javafx.scene.control.Label;
@@ -22,7 +20,6 @@ import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
 import java.io.File;
-import java.nio.file.Path;
 import java.util.Optional;
 
 public class VentanaPrincipal {

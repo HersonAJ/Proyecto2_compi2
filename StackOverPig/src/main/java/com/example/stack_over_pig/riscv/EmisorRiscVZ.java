@@ -14,20 +14,6 @@ import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-/**
- * Emite una función RISC-V (constructor o método de Zetariano) a partir de un FuncionRiscV.
- *
- * Marco de la función:
- *   0(fp)     s0 anterior
- *  -8(fp)     ra
- * -16(fp)     this (a0)
- * -24(fp)     1er parámetro (a1)
- * -32(fp)     2do parámetro (a2)
- *  ...
- *  -N(fp)      1ra variable local
- *
- * Los offsets los calcula este emisor, por función. No toca TablaSimbolosPig.
- */
 public class EmisorRiscVZ {
 
     private static final String IZQ = "t0";
@@ -57,8 +43,6 @@ public class EmisorRiscVZ {
             if (p.esPorReferencia()) parametrosPorReferencia.add(p.nombre());
         }
         asignarOffsets(funcion);
-
-        // Cuerpo primero: durante la emisión offsetDe() va reservando temporales y locales.
         StringBuilder cuerpo = new StringBuilder();
         int numero = 0;
         for (Cuarteta c : funcion.cuartetas()) {
@@ -71,8 +55,6 @@ public class EmisorRiscVZ {
                         "EmisorRiscVZ: falló en cuarteta #" + numero + " de " + funcion.nombre() + " | " + e.getMessage(), e);
             }
         }
-
-        // +8 porque el slot más profundo (-N(s0)) debe quedar DENTRO del marco: s0 = sp + framesize - 8.
         int framesize = ((siguienteOffset + 8 + 15) / 16) * 16;
 
         StringBuilder sb = ctx.getFunciones();
@@ -113,14 +95,13 @@ public class EmisorRiscVZ {
         if (off != null) return off;
         String tipo = tiposVariablesActuales.get(nombre);
         int bytes = tamanoEnBytes(nombre, tipo);
-        bytes = ((bytes + 7) / 8) * 8;      // alinear a 8
+        bytes = ((bytes + 7) / 8) * 8;
         siguienteOffset += bytes;
         int nuevo = -siguienteOffset;
         offsets.put(nombre, nuevo);
         return nuevo;
     }
 
-    /** Bytes que ocupa en la pila una variable de este tipo Pig (struct, arreglo o primitivo). */
     private int tamanoEnBytes(String nombre, String tipoPig) {
         if (tipoPig == null) return 8;
 
@@ -198,7 +179,6 @@ public class EmisorRiscVZ {
     }
 
     private void emitirOperacion(StringBuilder sb, OperacionBinaria o) {
-        // Concatenación: '+' con al menos un operando textum.
         if ("+".equals(o.getOperador()) && (esTextum(o.getIzquierda()) || esTextum(o.getDerecha()))) {
             ctx.getRutinasUsadas().add(RutinasConsola.CONCAT);
 
@@ -217,8 +197,6 @@ public class EmisorRiscVZ {
         }
 
         cargar(sb, o.getIzquierda(), IZQ, null);
-        // Aritmética con decimalis: al menos un operando decimalis → resultado decimalis
-        // (los enteros se escalan a decimalis antes de operar).
         String tIzq = o.getIzquierda().getTipo();
         String tDer = o.getDerecha().getTipo();
         boolean izqDec = "decimalis".equals(tIzq);
@@ -362,10 +340,6 @@ public class EmisorRiscVZ {
     }
 
     private void emitirLlamada(StringBuilder sb, Llamada l) {
-        // Llamada se usa para funciones Y libres (sin this) y para super.metodo(...)
-        // (que lleva this como primer argumento explícito). Distinguimos por el nombre:
-        // los métodos y constructores llevan "_constructor" o están en la tabla de virtuales;
-        // las funciones Y libres no. Para Y, los args van en a0..; para el resto, en a1...
         boolean esFuncionLibre = !l.getNombreFuncion().contains("_constructor")
                 && !ctx.getVirtuales().esVirtual(l.getNombreFuncion());
         int base = esFuncionLibre ? 0 : 1;
@@ -432,11 +406,7 @@ public class EmisorRiscVZ {
         sb.append("    sd   ").append(DIR).append(", 0(").append(DER).append(")\n");
         sb.append("    la   ").append(AUX).append(", heap\n");
         sb.append("    add  ").append(AUX).append(", ").append(AUX).append(", ").append(RES).append("\n");
-
-        // Guardar la base en IDX (no se toca en el bucle)
         sb.append("    mv   ").append(IDX).append(", ").append(AUX).append("\n");
-
-        // Inicializar a cero
         sb.append("    srli ").append(IZQ).append(", ").append(IZQ).append(", 3\n");
         int n = ctx.siguienteEtiqueta();
         sb.append("Larr_ini_").append(n).append(":\n");
@@ -482,28 +452,36 @@ public class EmisorRiscVZ {
                 sb.append("    la   a0, ").append(buffer).append("\n");
                 sb.append("    li   a1, 256\n");
                 sb.append("    jal  ra, ").append(RutinasConsola.LEER_CADENA).append("\n");
-                sb.append("    la   ").append(IZQ).append(", ").append(buffer).append("\n");
-                almacenar(sb, IZQ, l.getDestino());
+                if (l.getDestino() != null) {
+                    sb.append("    la   ").append(IZQ).append(", ").append(buffer).append("\n");
+                    almacenar(sb, IZQ, l.getDestino());
+                }
             }
             case "littera" -> {
                 ctx.getRutinasUsadas().add(RutinasConsola.LEER_CARACTER);
                 sb.append("    jal  ra, ").append(RutinasConsola.LEER_CARACTER).append("\n");
-                almacenar(sb, "a0", l.getDestino());
+                if (l.getDestino() != null) {
+                    almacenar(sb, "a0", l.getDestino());
+                }
             }
             case "decimalis" -> {
                 ctx.getRutinasUsadas().add(RutinasConsola.LEER_DECIMAL);
                 sb.append("    jal  ra, ").append(RutinasConsola.LEER_DECIMAL).append("\n");
-                almacenar(sb, "a0", l.getDestino());
+                if (l.getDestino() != null) {
+                    almacenar(sb, "a0", l.getDestino());
+                }
             }
             default -> {
                 ctx.getRutinasUsadas().add(RutinasConsola.LEER_ENTERO);
                 sb.append("    jal  ra, ").append(RutinasConsola.LEER_ENTERO).append("\n");
-                almacenar(sb, "a0", l.getDestino());
+                if (l.getDestino() != null) {
+                    almacenar(sb, "a0", l.getDestino());
+                }
             }
         }
     }
 
-    // ========== CARGAR / GUARDAR ==========
+    // CARGAR / GUARDAR
 
     private void cargar(StringBuilder sb, AccesoMemoria acc, String registro, String tipo) {
         if (acc instanceof Literal l) {
@@ -526,9 +504,7 @@ public class EmisorRiscVZ {
                     || ctx.getTabla().buscarVariable(vNombre(acc)).map(s -> s.dimensiones() > 0).orElse(false));
 
             if (esAgregado) {
-                // Struct o arreglo: hay que devolver la dirección, no el contenido.
                 if (porRef) {
-                    // parámetro por referencia: el slot YA contiene un puntero, lo cargamos.
                     if (cabe(off)) {
                         sb.append("    ld   ").append(registro).append(", ").append(off).append("(s0)\n");
                     } else {
@@ -546,7 +522,6 @@ public class EmisorRiscVZ {
                     }
                 }
             } else {
-                // primitivo: cargar el valor como antes.
                 if (cabe(off)) {
                     sb.append("    ld   ").append(registro).append(", ").append(off).append("(s0)\n");
                 } else {
@@ -592,7 +567,6 @@ public class EmisorRiscVZ {
         if (base instanceof AccesoVariable v) {
             int off = offsetDe(v.getNombre());
             if (esParametroPorReferencia(v.getNombre())) {
-                // El slot contiene un puntero al inicio del arreglo/struct.
                 if (cabe(off)) {
                     sb.append("    ld   ").append(registro).append(", ").append(off).append("(s0)\n");
                 } else {
@@ -601,7 +575,6 @@ public class EmisorRiscVZ {
                     sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
                 }
             } else {
-                // Variable local struct/arreglo: el slot ya es la dirección.
                 if (cabe(off)) {
                     sb.append("    addi ").append(registro).append(", s0, ").append(off).append("\n");
                 } else {
@@ -612,11 +585,7 @@ public class EmisorRiscVZ {
             return;
         }
         if (base instanceof AccesoAtributo1 attr) {
-            // Dirección del campo 'attr' (dentro de objeto Z o struct Y).
             direccionCampo(sb, attr.getBase(), attr.getCampo(), registro);
-
-            // Si el campo es un arreglo *inline* (struct Y), la dirección del campo ya es la del arreglo.
-            // Si el campo es un *puntero* a arreglo (objeto Z), hay que cargarlo.
             if (esCampoArregloPuntero(attr)) {
                 sb.append("    ld   ").append(registro).append(", 0(").append(registro).append(")\n");
             }
@@ -626,11 +595,6 @@ public class EmisorRiscVZ {
                 "EmisorRiscVZ: base de arreglo no soportada: " + base.getClass().getSimpleName());
     }
 
-    /**
-     * true si 'attr' es un campo de un objeto Z cuyo tipo es un arreglo por puntero
-     * (no inline). En Z, 'int[] x' es un puntero a un bloque creado con 'new int[n]'.
-     * En Y, 'flotante montos[10]' es un arreglo inline; su dirección ya es la del arreglo.
-     */
     private boolean esCampoArregloPuntero(AccesoAtributo1 attr) {
         String tipoObj = tipoDeBase(attr.getBase());
         if (tipoObj == null) return false;
@@ -644,7 +608,6 @@ public class EmisorRiscVZ {
         return false;
     }
 
-    /** Tipo Pig del receptor de un acceso a atributo ('this', una variable, o un atributo encadenado). */
     private String tipoDeBase(AccesoMemoria base) {
         if (base instanceof AccesoVariable v) {
             if (v.getNombre().equals("this")) return tipoClaseActual;
@@ -666,16 +629,11 @@ public class EmisorRiscVZ {
         return null;
     }
 
-    /** true si el nombre corresponde a un parámetro Y declarado como [] T arr o {} T p. */
     private boolean esParametroPorReferencia(String nombre) {
         if (parametrosPorReferencia == null) return false;
         return parametrosPorReferencia.contains(nombre);
     }
 
-    /**
-     * Deja en 'registro' la dirección del campo 'campo' del objeto 'base'.
-     * Si base es 'this', usa tipoClaseActual. Si base es una variable, usa su tipo del mapa.
-     */
     private void direccionCampo(StringBuilder sb, AccesoMemoria base, String campo, String registro) {
         String tipoClase;
         int offObjeto;
@@ -693,7 +651,6 @@ public class EmisorRiscVZ {
                     "EmisorRiscVZ: base de atributo debe ser 'this' o una variable");
         }
 
-        // 1. Struct Y: buscar en TablaSimbolosPig (donde el validador de Pig lo registró).
         var estOpt = ctx.getTabla().buscarEstructura(tipoClase);
         if (estOpt.isPresent()) {
             int offCampo = 0;
@@ -701,9 +658,7 @@ public class EmisorRiscVZ {
                 if (entry.getKey().equals(campo)) break;
                 offCampo += 8;
             }
-            // Cargar la dirección base.
             if (porReferencia) {
-                // slot = puntero al struct
                 if (cabe(offObjeto)) {
                     sb.append("    ld   ").append(registro).append(", ").append(offObjeto).append("(s0)\n");
                 } else {
@@ -712,7 +667,6 @@ public class EmisorRiscVZ {
                     sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
                 }
             } else {
-                // slot = dirección del struct local (por valor)
                 if (cabe(offObjeto)) {
                     sb.append("    addi ").append(registro).append(", s0, ").append(offObjeto).append("\n");
                 } else {
@@ -727,7 +681,6 @@ public class EmisorRiscVZ {
             return;
         }
 
-        // 2. Clase Z: comportamiento original.
         int offCampo = calcularOffsetCampo(tipoClase, campo);
         if (cabe(offObjeto)) {
             sb.append("    ld   ").append(registro).append(", ").append(offObjeto).append("(s0)\n");
@@ -743,9 +696,6 @@ public class EmisorRiscVZ {
     }
 
     private String tipoDeVariable(String nombre) {
-        // Buscar en los tipos de variables de la función en curso.
-        // Se resuelve vía FuncionRiscV.tiposVariables. Aquí usamos un campo auxiliar.
-        // Lo seteamos al inicio de emitirFuncion.
         return tiposVariablesActuales.getOrDefault(nombre, "?");
     }
 

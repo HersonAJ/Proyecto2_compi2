@@ -44,7 +44,6 @@ public class EmisorRiscV {
         this.tamanoHeap = tamanoHeap;
     }
 
-    // Compatibilidad: si alguien llama con un solo argumento, heap = 0.
     public EmisorRiscV(TablaSimbolosPig tabla) {
         this(tabla, 0);
     }
@@ -60,13 +59,6 @@ public class EmisorRiscV {
         ctx.setVirtuales(virtuales);
 
         // 1. Emitir main.
-        if (IMPRIMIR_CUARTETAS_EN_CONSOLA) {
-            System.out.println("===== CUARTETAS MAIN (" + main.size() + ") =====");
-            int k = 0;
-            for (Cuarteta c : main) System.out.println("[" + (++k) + "] " + describir(c));
-            System.out.println("===== FIN CUARTETAS MAIN =====");
-        }
-
         int numero = 0;
         for (Cuarteta c : main) {
             numero++;
@@ -101,12 +93,11 @@ public class EmisorRiscV {
         StringBuilder bssFinal = new StringBuilder(ctx.getBss());
         bssFinal.append(ctx.getVirtuales().seccionData());
         if (tamanoHeap > 0) {
-            bssFinal.append("    .align 3\n");                                // ← alinear a 8 bytes
+            bssFinal.append("    .align 3\n");
             bssFinal.append("    heap:       .space ").append(tamanoHeap).append("\n");
-            bssFinal.append("    .align 3\n");                                // ← alinear heap_ptr
+            bssFinal.append("    .align 3\n");
             bssFinal.append("    heap_ptr:   .dword 0\n");
         }
-// RARS no soporta .bss; usar .data para heap y buffers.
         if (bssFinal.length() > 0) {
             if (ctx.getData().length() == 0) {
                 out.append(".data\n");
@@ -138,7 +129,6 @@ public class EmisorRiscV {
         return out.toString();
     }
 
-    // Compatibilidad con llamadas anteriores.
     public String emitir(List<Cuarteta> cuartetas) {
         return emitir(cuartetas, List.of());
     }
@@ -175,7 +165,7 @@ public class EmisorRiscV {
         return sb.toString();
     }
 
-    // ========== CUARTETAS ==========
+    // CUARTETAS
 
     private void emitirCuarteta(Cuarteta c) {
         if (c instanceof AsignacionArreglo a) emitirAsignacionArreglo(a);
@@ -188,8 +178,8 @@ public class EmisorRiscV {
         else if (c instanceof DefinicionEtiqueta e) etiqueta("L" + e.getEtiqueta());
         else if (c instanceof Llamada l) emitirLlamada(l);
         else if (c instanceof NewObjeto n) emitirNewObjeto(n);
-        else if (c instanceof NewArreglo a) emitirNewArreglo(a);        // ← nuevo
-        else if (c instanceof LlamadaMetodo1 lm) emitirLlamadaMetodo(lm); // ← nuevo
+        else if (c instanceof NewArreglo a) emitirNewArreglo(a);
+        else if (c instanceof LlamadaMetodo1 lm) emitirLlamadaMetodo(lm);
         else if (c instanceof Retorno1 r) emitirRetorno(r);
         else if (c instanceof ConversionTipo ct) emitirConversion(ct);
         else if (c instanceof ImprimirPig i) emitirImprimir(i);
@@ -326,7 +316,7 @@ public class EmisorRiscV {
         almacenar(IZQ, c.getDestino());
     }
 
-    // ========== E/S ==========
+    // E/S
 
     private void emitirImprimir(ImprimirPig i) {
         String rutina = switch (i.getTipo()) {
@@ -349,28 +339,35 @@ public class EmisorRiscV {
                 linea("la   a0, %s", buffer);
                 linea("li   a1, %d", CAPACIDAD_LECTURA_TEXTO);
                 linea("jal  ra, %s", RutinasConsola.LEER_CADENA);
-                linea("la   %s, %s", IZQ, buffer);
-                almacenar(IZQ, l.getDestino());
+                if (l.getDestino() != null) {
+                    linea("la   %s, %s", IZQ, buffer);
+                    almacenar(IZQ, l.getDestino());
+                }
             }
             case "littera" -> {
                 ctx.getRutinasUsadas().add(RutinasConsola.LEER_CARACTER);
                 linea("jal  ra, %s", RutinasConsola.LEER_CARACTER);
-                almacenar("a0", l.getDestino());
+                if (l.getDestino() != null) {
+                    almacenar("a0", l.getDestino());
+                }
             }
             case "decimalis" -> {
                 ctx.getRutinasUsadas().add(RutinasConsola.LEER_DECIMAL);
                 linea("jal  ra, %s", RutinasConsola.LEER_DECIMAL);
-                almacenar("a0", l.getDestino());
+                if (l.getDestino() != null) {
+                    almacenar("a0", l.getDestino());
+                }
             }
             default -> {
                 ctx.getRutinasUsadas().add(RutinasConsola.LEER_ENTERO);
                 linea("jal  ra, %s", RutinasConsola.LEER_ENTERO);
-                almacenar("a0", l.getDestino());
+                if (l.getDestino() != null) {
+                    almacenar("a0", l.getDestino());
+                }
             }
         }
     }
-
-    // ========== CARGAR / GUARDAR ==========
+    // CARGAR / GUARDAR
 
     private void cargar(AccesoMemoria acc, String registro) {
         if (acc instanceof Literal l) {
@@ -385,8 +382,6 @@ public class EmisorRiscV {
             linea("add  %s, %s, %s", DIR, DIR, registro);
             linea("ld   %s, 0(%s)", registro, DIR);
         } else {
-            // Struct por valor: la dirección de la variable es la dirección del struct.
-            // Primitivo o puntero a objeto: cargar el valor.
             Ubicacion u = ubicar(acc);
             boolean esStruct = esStructPorValor(acc);
             if (esStruct) {
@@ -402,7 +397,6 @@ public class EmisorRiscV {
         }
     }
 
-    /** true si 'acc' es una variable local de tipo struct por valor (no un objeto/puntero). */
     private boolean esStructPorValor(AccesoMemoria acc) {
         if (!(acc instanceof AccesoVariable v)) return false;
         TablaSimbolosPig.SimboloVariable s = tabla.buscarVariable(v.getNombre()).orElse(null);
@@ -544,7 +538,7 @@ public class EmisorRiscV {
         return Integer.parseInt(s);
     }
 
-    // ========== DESCRIBIR ==========
+    //DESCRIBIR
 
     private static String describir(AccesoMemoria acc) {
         try {
@@ -604,7 +598,6 @@ public class EmisorRiscV {
         int offsetCampo = calcularOffsetCampo(s.tipo(), campo);
 
         if (s.esEstructura()) {
-            // Estructura por valor: campo en s0 + s.offset() + offsetCampo.
             int offsetTotal = s.offset() + offsetCampo;
             if (cabe(offsetTotal)) {
                 linea("addi %s, s0, %d   # &%s.%s", registro, offsetTotal, v.getNombre(), campo);
@@ -613,7 +606,6 @@ public class EmisorRiscV {
                 linea("add  %s, s0, %s   # &%s.%s", registro, registro, v.getNombre(), campo);
             }
         } else if (s.esObjeto()) {
-            // Objeto: p es puntero. Cargar p y sumar offsetCampo.
             if (cabe(s.offset())) {
                 linea("ld   %s, %d(s0)   # %s", registro, s.offset(), v.getNombre());
             } else {

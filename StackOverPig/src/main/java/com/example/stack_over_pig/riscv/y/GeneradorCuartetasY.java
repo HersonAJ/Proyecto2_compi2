@@ -29,15 +29,11 @@ public class GeneradorCuartetasY {
         this.gestor = new GestorCodigoIntermedio();
     }
 
-    // ========== PUNTO DE ENTRADA ==========
+    // PUNTO DE ENTRADA
 
     public FuncionRiscV generarFuncion(NodoFuncion.Funcion f) {
         this.nombreFuncionActual = f.nombre();
         this.tipoRetornoActual = f.tipoRetorno();
-
-        // PRIMERO: parámetros → tiposVariables y params. Debe ir ANTES del cuerpo
-        // para que visitarAccesoAtributo/visitarAccesoArray vean el tipo real de cada
-        // parámetro (struct → nombre del struct; arreglo/primitivo → tipo Pig).
         List<FuncionRiscV.ParametroRiscV> params = new ArrayList<>();
         String nombre = f.nombre();
         for (NodoParametro p : f.parametros()) {
@@ -50,8 +46,6 @@ public class GeneradorCuartetasY {
                 nombre += "_" + tipoPig;
             }
         }
-
-        // SEGUNDO: cuerpo.
         for (NodoSentencia s : f.cuerpo()) {
             visitarSentencia(s);
         }
@@ -72,7 +66,7 @@ public class GeneradorCuartetasY {
                 new ArrayList<>(gestor.getCuartetas()));
     }
 
-    // ========== SENTENCIAS ==========
+    //SENTENCIAS
 
     private void visitarSentencia(NodoSentencia s) {
         switch (s.tipoNodo()) {
@@ -96,7 +90,8 @@ public class GeneradorCuartetasY {
             case DECLARACION_ESTRUCTURA -> visitarDeclaracionEstructura((NodoSentencia.DeclaracionEstructura) s);
             case DECLARACION_ARREGLO -> visitarDeclaracionArreglo((NodoSentencia.DeclaracionArreglo) s);
             case LEER -> gestor.emitir(new LeerPig(null, "numerus"));
-            case ELEGIR, DECLARACION_MATRIZ, DECLARACION_ESTRUCTURA_LOCAL ->
+            case ELEGIR -> visitarElegir((NodoSentencia.Elegir) s);
+            case DECLARACION_MATRIZ, DECLARACION_ESTRUCTURA_LOCAL ->
                     throw new UnsupportedOperationException(
                             "GeneradorCuartetasY: sentencia no soportada en esta tanda: " + s.tipoNodo());
         }
@@ -162,6 +157,43 @@ public class GeneradorCuartetasY {
             for (NodoSentencia s : c.cuerpoContrario()) visitarSentencia(s);
         }
 
+        gestor.emitir(new DefinicionEtiqueta(lFin));
+    }
+
+    private void visitarElegir(NodoSentencia.Elegir e) {
+        int lFin = gestor.getContador().siguienteEtiqueta();
+        List<Integer> etiquetasCasos = new ArrayList<>();
+        for (int i = 0; i < e.casos().size(); i++) {
+            etiquetasCasos.add(gestor.getContador().siguienteEtiqueta());
+        }
+        int lSiempre = e.siempre() != null
+                ? gestor.getContador().siguienteEtiqueta()
+                : lFin;
+        visitarExpresion(e.expresion());
+        AccesoTemporal tExp = nuevoTemporal("numerus");
+        gestor.emitir(new AsignacionVariable(tExp, ultimoResultado));
+        for (int i = 0; i < e.casos().size(); i++) {
+            NodoSentencia.CasoElegir caso = e.casos().get(i);
+            visitarExpresion(caso.valor());
+            AccesoTemporal tCaso = nuevoTemporal("numerus");
+            gestor.emitir(new AsignacionVariable(tCaso, ultimoResultado));
+            gestor.emitir(new Condicional1(tExp, "==", tCaso, etiquetasCasos.get(i)));
+        }
+        gestor.emitir(new Salto(lSiempre));
+        gestor.entrarCiclo(new ContextoCiclo(lFin, lFin));
+        for (int i = 0; i < e.casos().size(); i++) {
+            gestor.emitir(new DefinicionEtiqueta(etiquetasCasos.get(i)));
+            for (NodoSentencia s : e.casos().get(i).cuerpo()) {
+                visitarSentencia(s);
+            }
+        }
+        if (e.siempre() != null) {
+            gestor.emitir(new DefinicionEtiqueta(lSiempre));
+            for (NodoSentencia s : e.siempre().cuerpo()) {
+                visitarSentencia(s);
+            }
+        }
+        gestor.salirCiclo();
         gestor.emitir(new DefinicionEtiqueta(lFin));
     }
 
@@ -250,7 +282,7 @@ public class GeneradorCuartetasY {
         gestor.emitir(new ImprimirPig(new Literal("\n", "textum"), "textum"));
     }
 
-    // ========== EXPRESIONES ==========
+    // EXPRESIONES
 
     private void visitarExpresion(NodoExpr e) {
         switch (e.tipoNodo()) {
@@ -356,14 +388,11 @@ public class GeneradorCuartetasY {
                 .orElseThrow(() -> new IllegalStateException(
                         "GeneradorCuartetasY: estructura no encontrada: " + tipo));
         List<String> campos = new ArrayList<>(def.atributos().keySet());
-
-        // Inicializar los campos con los valores en orden posicional.
         AccesoVariable base = new AccesoVariable(d.nombre(), tipo);
         for (int i = 0; i < d.inicializacion().size() && i < campos.size(); i++) {
             visitarExpresion(d.inicializacion().get(i));
             gestor.emitir(new AsignacionAtributo(base, campos.get(i), false, ultimoResultado));
         }
-        // Rellenar con ceros los no inicializados.
         for (int i = d.inicializacion().size(); i < campos.size(); i++) {
             gestor.emitir(new AsignacionAtributo(base, campos.get(i), false, new Literal(0, "numerus")));
         }
@@ -409,7 +438,7 @@ public class GeneradorCuartetasY {
         ultimoResultado = new AccesoAtributo1(obj, a.atributo(), false, tipoYaPig(tipoCampo));
     }
 
-    // ========== HELPERS ==========
+    // HELPERS
 
     private AccesoTemporal nuevoTemporal(String tipo) {
         return new AccesoTemporal(gestor.getContador().siguienteTemporal(tipo), tipo);

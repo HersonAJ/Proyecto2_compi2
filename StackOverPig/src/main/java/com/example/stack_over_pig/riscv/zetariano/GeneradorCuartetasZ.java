@@ -38,15 +38,13 @@ public class GeneradorCuartetasZ {
         this.gestor = new GestorCodigoIntermedio();
     }
 
-    // ========== PUNTOS DE ENTRADA ==========
+    // PUNTOS DE ENTRADA
 
     public FuncionRiscV generarConstructor(NodoConstructor c) {
         // Registrar parámetros como variables locales.
         for (NodoParametroZ p : c.parametros()) {
             tiposVariables.put(p.nombre(), tipoZaPig(p.tipo()));
         }
-
-        // super() implícito: si hay superclase y el constructor no lo escribe, se llama al constructor vacío del padre.
         if (tabla.getSuperclase() != null && !empiezaConSuper(c.cuerpo())) {
             emitirLlamadaConstructorPadre(new ArrayList<>(), new ArrayList<>());
         }
@@ -58,8 +56,6 @@ public class GeneradorCuartetasZ {
 
         // Retorno implícito de this.
         gestor.emitir(new Retorno1(new AccesoVariable("this", tipoClase)));
-
-        // Nombre RISC-V.
         String nombre = tipoClase + "_constructor";
         for (NodoParametroZ p : c.parametros()) {
             nombre += "_" + tipoZaPig(p.tipo());
@@ -76,10 +72,6 @@ public class GeneradorCuartetasZ {
                 new ArrayList<>(gestor.getCuartetas()));
     }
 
-    /**
-     * Constructor por defecto implícito (clase sin constructores declarados): solo devuelve this.
-     * Pendiente (Fase 3c): si la clase tiene superclase, debe llamar al constructor vacío del padre.
-     */
     public FuncionRiscV generarConstructorPorDefecto() {
         if (tabla.getSuperclase() != null) {
             emitirLlamadaConstructorPadre(new ArrayList<>(), new ArrayList<>());
@@ -100,8 +92,6 @@ public class GeneradorCuartetasZ {
         for (NodoSentencia s : m.cuerpo()) {
             visitarSentencia(s);
         }
-
-        // Retorno implícito si es void y no hay return explícito.
         if (m.tipoRetorno() == null) {
             gestor.emitir(new Retorno1(null));
         }
@@ -122,7 +112,7 @@ public class GeneradorCuartetasZ {
                 new ArrayList<>(gestor.getCuartetas()));
     }
 
-    // ========== SENTENCIAS ==========
+    // SENTENCIAS
 
     private void visitarSentencia(NodoSentencia s) {
         switch (s.tipoNodo()) {
@@ -144,8 +134,7 @@ public class GeneradorCuartetasZ {
                 ContextoCiclo ciclo = gestor.cicloActual();
                 if (ciclo != null) gestor.emitir(new Continuar1(ciclo.getEtiquetaContinuar()));
             }
-            case SWITCH -> throw new UnsupportedOperationException(
-                    "GeneradorCuartetasZ: switch se implementará en Fase 3b.2");
+            case SWITCH -> visitarSwitch((NodoSentencia.Switch) s);
             case LLAMADA_SUPER_CONSTRUCTOR -> visitarSuperConstructor((NodoSentencia.LlamadaSuperConstructor) s);
             case CASO_SWITCH, CASO_DEFAULT -> { /* gestionados por Switch */ }
         }
@@ -163,6 +152,47 @@ public class GeneradorCuartetasZ {
         }
     }
 
+    private void visitarSwitch(NodoSentencia.Switch sw) {
+        int lFin = gestor.getContador().siguienteEtiqueta();
+        List<Integer> etiquetasCasos = new ArrayList<>();
+        for (int i = 0; i < sw.casos().size(); i++) {
+            etiquetasCasos.add(gestor.getContador().siguienteEtiqueta());
+        }
+        int lDefault = sw.casoDefault() != null
+                ? gestor.getContador().siguienteEtiqueta()
+                : lFin;
+
+        visitarExpresion(sw.expresion());
+        AccesoTemporal tExp = nuevoTemporal("numerus");
+        gestor.emitir(new AsignacionVariable(tExp, ultimoResultado));
+
+        for (int i = 0; i < sw.casos().size(); i++) {
+            NodoSentencia.CasoSwitch caso = sw.casos().get(i);
+            visitarExpresion(caso.valor());
+            AccesoTemporal tCaso = nuevoTemporal(tipoPigDeExpresion(caso.valor()));
+            gestor.emitir(new AsignacionVariable(tCaso, ultimoResultado));
+            gestor.emitir(new Condicional1(tExp, "==", tCaso, etiquetasCasos.get(i)));
+        }
+        gestor.emitir(new Salto(lDefault));
+
+        gestor.entrarCiclo(new ContextoCiclo(lFin, lFin));
+        for (int i = 0; i < sw.casos().size(); i++) {
+            gestor.emitir(new DefinicionEtiqueta(etiquetasCasos.get(i)));
+            for (NodoSentencia s : sw.casos().get(i).cuerpo()) {
+                visitarSentencia(s);
+            }
+        }
+        if (sw.casoDefault() != null) {
+            gestor.emitir(new DefinicionEtiqueta(lDefault));
+            for (NodoSentencia s : sw.casoDefault().cuerpo()) {
+                visitarSentencia(s);
+            }
+        }
+        gestor.salirCiclo();
+
+        gestor.emitir(new DefinicionEtiqueta(lFin));
+    }
+
     /** '=', '+=', '-=', '*='. La compuesta lee el destino, opera y vuelve a guardar. */
     private void visitarAsignacion(NodoSentencia.Asignacion a) {
         String opBinario = operadorBinarioDeCompuesta(a.operador());
@@ -175,8 +205,6 @@ public class GeneradorCuartetasZ {
             almacenarEn(destino, valor);
             return;
         }
-
-        // Compuesta: destino (se evalúa una sola vez), luego valor.
         visitarExpresion(a.destino());
         AccesoMemoria destino = ultimoResultado;
         visitarExpresion(a.valor());
@@ -194,7 +222,7 @@ public class GeneradorCuartetasZ {
             case "+=" -> "+";
             case "-=" -> "-";
             case "*=" -> "*";
-            default -> null;   // '=' (o cualquier otro) es asignación simple
+            default -> null;
         };
     }
 
@@ -331,7 +359,7 @@ public class GeneradorCuartetasZ {
         }
     }
 
-    // ========== EXPRESIONES ==========
+    // EXPRESIONES
 
     private void visitarExpresion(NodoExpr e) {
         switch (e.tipoNodo()) {
@@ -362,12 +390,10 @@ public class GeneradorCuartetasZ {
 
     private void visitarIdentificador(NodoExpr.Identificador i) {
         String nombre = i.nombre();
-        // 1. Local o parámetro.
         if (tiposVariables.containsKey(nombre)) {
             ultimoResultado = new AccesoVariable(nombre, tiposVariables.get(nombre));
             return;
         }
-        // 2. Atributo (this.nombre implícito).
         var attrOpt = tabla.buscarAtributoEn(tipoClase, nombre);
         if (attrOpt.isPresent()) {
             var attr = attrOpt.get();
@@ -424,8 +450,6 @@ public class GeneradorCuartetasZ {
         boolean esAnd = "&&".equals(b.operador());
         int lFin = gestor.getContador().siguienteEtiqueta();
         AccesoTemporal res = nuevoTemporal("bool");
-
-        // Valor por defecto si se corta el cálculo: && -> 0, || -> 1.
         gestor.emitir(new AsignacionVariable(res, new Literal(esAnd ? 0 : 1, "bool")));
 
         String saltarSi = esAnd ? "==" : "!=";
@@ -436,7 +460,6 @@ public class GeneradorCuartetasZ {
         visitarExpresion(b.derecha());
         gestor.emitir(new Condicional1(ultimoResultado, saltarSi, new Literal(0, "bool"), lFin));
 
-        // Llegó hasta aquí sin cortar: && -> 1, || -> 0.
         gestor.emitir(new AsignacionVariable(res, new Literal(esAnd ? 1 : 0, "bool")));
         gestor.emitir(new DefinicionEtiqueta(lFin));
         ultimoResultado = res;
@@ -494,10 +517,6 @@ public class GeneradorCuartetasZ {
         ultimoResultado = res;
     }
 
-    /**
-     * 'metodo(args)' sin receptor: en Zetariano solo puede ser un método de la propia clase
-     * (o heredado), o sea this.metodo(args).
-     */
     private void visitarLlamadaFuncion(NodoExpr.LlamadaFuncion l) {
         List<AccesoMemoria> args = new ArrayList<>();
         List<String> tiposArgs = new ArrayList<>();
@@ -543,9 +562,7 @@ public class GeneradorCuartetasZ {
                     "GeneradorCuartetasZ: método no encontrado: " + l.nombre() + " en " + tipoObj);
         }
 
-        // El nombre sale de la FIRMA declarada (tipos de los parámetros), no de los argumentos.
         String nombreRiscV = nombreMetodo(claseDeclarante(firma, tipoObj), l.nombre(), firma);
-
         String tipoRet = firma.tipoRetorno() != null ? tipoZaPig(firma.tipoRetorno()) : "numerus";
         AccesoTemporal t = nuevoTemporal(tipoRet);
         gestor.emitir(new LlamadaMetodo1(t, obj, nombreRiscV, args));
@@ -596,7 +613,7 @@ public class GeneradorCuartetasZ {
         ultimoResultado = t;
     }
 
-    // ========== HELPERS ==========
+    // HELPERS
 
     private AccesoTemporal nuevoTemporal(String tipo) {
         int idT = gestor.getContador().siguienteTemporal(tipo);
@@ -727,7 +744,6 @@ public class GeneradorCuartetasZ {
         return f.tiposParametros().stream().map(GeneradorCuartetasZ::tipoZaPig).toList();
     }
 
-    /** ¿Se puede pasar un argumento de tipo 'arg' a un parámetro de tipo 'param'? */
     private boolean tipoCompatible(String arg, String param) {
         if (arg == null || param == null) return false;
         if (arg.equals(param)) return true;
@@ -741,19 +757,16 @@ public class GeneradorCuartetasZ {
         return "numerus".equals(t) || "decimalis".equals(t) || "littera".equals(t) || "bool".equals(t);
     }
 
-    /** Nombre RISC-V de un método: Clase_metodo_<tipos de los parámetros declarados>. */
     private static String nombreMetodo(String clase, String metodo, TablaSimbolosZ.Firma f) {
         StringBuilder sb = new StringBuilder(clase).append('_').append(metodo);
         for (String t : f.tiposParametros()) sb.append('_').append(tipoZaPig(t));
         return sb.toString();
     }
 
-    /** Clase donde está escrito el método (con herencia puede ser un ancestro de la clase del receptor). */
     private static String claseDeclarante(TablaSimbolosZ.Firma f, String porDefecto) {
         return f.claseDeclarante() != null ? f.claseDeclarante() : porDefecto;
     }
 
-    /** Traduce un tipo de Zetariano al vocabulario Pig. Si ya está en Pig o es una clase, lo deja igual. */
     private static String tipoZaPig(String tipoZ) {
         if (tipoZ == null) return null;
         return switch (tipoZ) {
@@ -762,7 +775,7 @@ public class GeneradorCuartetasZ {
             case "char"    -> "littera";
             case "String"  -> "textum";
             case "boolean" -> "bool";
-            default        -> tipoZ;  // clase
+            default        -> tipoZ;
         };
     }
 
@@ -781,7 +794,6 @@ public class GeneradorCuartetasZ {
         emitirLlamadaConstructorPadre(args, tiposArgs);
     }
 
-    /** Llama al constructor del padre con 'this' como receptor. El resultado (this) se descarta. */
     private void emitirLlamadaConstructorPadre(List<AccesoMemoria> args, List<String> tiposArgs) {
         String padre = tabla.getSuperclase();
         TablaSimbolosZ.Firma firma = resolverSobrecarga(tabla.getConstructoresDe(padre), tiposArgs, padre);
@@ -794,10 +806,9 @@ public class GeneradorCuartetasZ {
         gestor.emitir(new LlamadaMetodo1(null, new AccesoVariable("this", tipoClase), nombre, args));
     }
 
-    /** super.metodo(args): llamada DIRECTA a la versión del padre (no pasa por la tabla de métodos). */
     private void visitarLlamadaMetodoSuper(NodoExpr.LlamadaMetodoSuper l) {
         List<AccesoMemoria> args = new ArrayList<>();
-        args.add(new AccesoVariable("this", tipoClase));      // el receptor viaja como primer argumento (a0)
+        args.add(new AccesoVariable("this", tipoClase));
         List<String> tiposArgs = new ArrayList<>();
         for (NodoExpr arg : l.argumentos()) {
             visitarExpresion(arg);

@@ -9,26 +9,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/**
- * Única fuente de verdad sobre cómo se ve un objeto en memoria y cómo se resuelven
- * sus miembros cuando hay herencia. La usan los dos emisores (main de Pig y funciones de Z)
- * y el generador de cuartetas de Pig, para que nadie calcule offsets por su cuenta.
- *
- * Disposición de un objeto (cada campo ocupa 8 bytes):
- *
- *     [ atributos de la raíz ][ atributos del hijo ][ atributos del nieto ] ...
- *
- * Los atributos del padre van PRIMERO, así 'nombre' queda en el mismo lugar en un
- * Animal y en un Perro, y el código escrito para Animal sirve para cualquier subclase.
- *
- * (En la etapa de despacho dinámico se agregará aquí, al inicio, el puntero a la tabla de métodos.)
- */
 public class DisposicionObjetos {
 
     public static final int BYTES_CAMPO = 8;
     public static final int ENCABEZADO = 8;
-
-    /** Un método encontrado, junto con la clase donde está escrito. */
     public record MetodoResuelto(String claseDeclarante, TablaSimbolosPig.Firma firma) {}
 
     private final TablaSimbolosPig tabla;
@@ -37,7 +21,7 @@ public class DisposicionObjetos {
         this.tabla = tabla;
     }
 
-    // ========== JERARQUÍA ==========
+    // JERARQUIA
 
     /** La clase y sus ancestros conocidos, de la raíz a la clase misma. Vacía si la clase no se conoce. */
     public List<String> cadenaDesdeRaiz(String clase) {
@@ -53,9 +37,8 @@ public class DisposicionObjetos {
         return cadena;
     }
 
-    // ========== ATRIBUTOS ==========
+    // ATRIBUTOS
 
-    /** Offset (en bytes, desde el inicio del objeto) del atributo. Si se repite el nombre gana el más derivado. */
     public int offsetCampo(String clase, String campo) {
         int indice = 0;
         int encontrado = -1;
@@ -72,7 +55,6 @@ public class DisposicionObjetos {
         return ENCABEZADO + encontrado * BYTES_CAMPO;
     }
 
-    /** Bytes que ocupa un objeto de esa clase (incluye los atributos heredados). Mínimo 8. */
     public int tamano(String clase) {
         int campos = 0;
         for (String c : cadenaDesdeRaiz(clase)) {
@@ -81,7 +63,6 @@ public class DisposicionObjetos {
         return ENCABEZADO + campos * BYTES_CAMPO;
     }
 
-    /** Busca el atributo en la clase y luego en sus ancestros (gana el más cercano). */
     public Optional<TablaSimbolosPig.AtributoClase> buscarAtributo(String clase, String campo) {
         List<String> cadena = cadenaDesdeRaiz(clase);
         for (int i = cadena.size() - 1; i >= 0; i--) {
@@ -91,12 +72,8 @@ public class DisposicionObjetos {
         return Optional.empty();
     }
 
-    // ========== MÉTODOS Y CONSTRUCTORES ==========
+    // METODOS Y CONSTRUCTORES
 
-    /**
-     * Busca un método por nombre y tipos de argumento, empezando por la clase y subiendo por sus ancestros.
-     * Primero intenta coincidencia exacta de tipos; si no hay, acepta subclases donde se espera la clase padre.
-     */
     public Optional<MetodoResuelto> buscarMetodo(String clase, String nombre, List<String> tiposArgs) {
         List<String> cadena = cadenaDesdeRaiz(clase);
         for (boolean exacto : new boolean[]{true, false}) {
@@ -112,10 +89,6 @@ public class DisposicionObjetos {
         return Optional.empty();
     }
 
-    /**
-     * Tipos de parámetros del constructor que corresponde a esos argumentos (los constructores no se heredan).
-     * Una clase sin constructores declarados tiene uno implícito sin parámetros.
-     */
     public Optional<List<String>> buscarConstructor(String clase, List<String> tiposArgs) {
         var def = tabla.buscarClase(clase);
         if (def.isEmpty()) return Optional.empty();
@@ -132,21 +105,19 @@ public class DisposicionObjetos {
         return Optional.empty();
     }
 
-    /** Nombre RISC-V del constructor: Clase_constructor_<tipos de los parámetros declarados>. */
     public static String nombreConstructor(String clase, List<String> tiposParametros) {
         StringBuilder sb = new StringBuilder(clase).append("_constructor");
         for (String t : tiposParametros) sb.append('_').append(t);
         return sb.toString();
     }
 
-    /** Nombre RISC-V del método: ClaseDeclarante_metodo_<tipos de los parámetros declarados>. */
     public static String nombreMetodo(String claseDeclarante, String metodo, TablaSimbolosPig.Firma firma) {
         StringBuilder sb = new StringBuilder(claseDeclarante).append('_').append(metodo);
         for (String t : tipos(firma.parametros())) sb.append('_').append(t);
         return sb.toString();
     }
 
-    // ========== AUXILIARES ==========
+    // AUXILIARES
 
     private boolean coincide(List<TablaSimbolosPig.Parametro> parametros, List<String> tiposArgs, boolean exacto) {
         if (parametros.size() != tiposArgs.size()) return false;

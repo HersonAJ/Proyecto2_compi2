@@ -46,7 +46,7 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         return gestor.getContador();
     }
 
-    // ========== SENTENCIAS ==========
+    // SENTENCIAS
 
     @Override
     public void visitar(NodoSentencia.DeclaracionVariable d) {
@@ -90,21 +90,7 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         }
         rellenarConCeros(d.nombre(), d.tipo(), inicializados, d.tamano());
     }
-/*
-    @Override
-    public void visitar(NodoSentencia.Asignacion a) {
-        a.valor().aceptar(this);
-        AccesoMemoria valor = ultimoResultado;
-        a.destino().aceptar(this);
-        AccesoMemoria destino = ultimoResultado;
 
-        if (destino instanceof AccesoArreglo arr) {
-            gestor.emitir(new AsignacionArreglo(arr.getBase(), arr.getIndice(), valor));
-        } else {
-            gestor.emitir(new AsignacionVariable(destino, valor));
-        }
-    }
-*/
     @Override
     public void visitar(NodoSentencia.Condicional c) {
         int lSi = gestor.getContador().siguienteEtiqueta();
@@ -272,7 +258,7 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         l.llamada().aceptar(this);
     }
 
-    // ========== EXPRESIONES ==========
+    // EXPRESIONES
 
     @Override
     public void visitar(NodoExpr.LiteralEntero l) {
@@ -344,9 +330,6 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
             arg.aceptar(this);
             args.add(ultimoResultado);
         }
-
-        // El nombre RISC-V real de la función depende de la firma declarada:
-        // si está registrada en la tabla (p. ej. vino de un .y), se usa Nombre_<tipos>.
         String nombreRiscV = l.nombre();
         var definicion = tabla.buscarFuncion(l.nombre());
         if (definicion.isPresent()) {
@@ -381,7 +364,7 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         ultimoResultado = new AccesoArreglo(base, indice, tipoElemento);
     }
 
-    // ========== HELPERS ==========
+    // HELPERS
 
     private String tipoAC(String tipoPig) {
         return switch (tipoPig) {
@@ -450,7 +433,6 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
             }
             return;
         }
-        // arreglos grandes: un ciclo corto en vez de una cuarteta por elemento
         int lInicio = gestor.getContador().siguienteEtiqueta();
         int lFin = gestor.getContador().siguienteEtiqueta();
         AccesoTemporal k = new AccesoTemporal(gestor.getContador().siguienteTemporal("int"), "int");
@@ -467,7 +449,6 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
 
     @Override
     public void visitar(NodoSentencia.DeclaracionStruct d) {
-        // Obtener la definición de la estructura
         var estOpt = tabla.buscarEstructura(d.tipo());
         if (estOpt.isEmpty()) {
             throw new IllegalStateException("Estructura no encontrada: " + d.tipo());
@@ -480,7 +461,6 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
             tabla.actualizarOffsetVariable(d.nombre(), offset);
         }
 
-        // Inicializar campos en orden posicional
         List<String> nombresCampos = new ArrayList<>(est.atributos().keySet());
         for (int i = 0; i < d.inicializacion().size() && i < nombresCampos.size(); i++) {
             d.inicializacion().get(i).aceptar(this);
@@ -489,7 +469,6 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
             gestor.emitir(new AsignacionAtributo(base, nombresCampos.get(i), false, valor));
         }
 
-        // Rellenar con ceros los campos no inicializados
         for (int i = d.inicializacion().size(); i < nombresCampos.size(); i++) {
             AccesoVariable base = new AccesoVariable(d.nombre(), d.tipo());
             AccesoMemoria cero = new Literal(0, "numerus");
@@ -534,7 +513,7 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
         }
     }
 
-    // ========== OBJETOS ==========
+    // OBJETOS
 
     @Override
     public void visitar(NodoExpr.InstanciaObjeto inst) {
@@ -547,7 +526,7 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
             tiposArgs.add(tipoPigLatinDe(arg));
         }
 
-        // 2. Nombre RISC-V del constructor, a partir de los parámetros DECLARADOS.
+        // 2. Nombre del constructor, a partir de los parametros DECLARADOS.
         List<String> tiposParam = disposicion.buscarConstructor(inst.tipoClase(), tiposArgs)
                 .orElseThrow(() -> new IllegalStateException(
                         "GeneradorCuartetasPig: constructor no encontrado en " + inst.tipoClase()
@@ -579,14 +558,14 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
             tiposArgs.add(tipoPigLatinDe(arg));
         }
 
-        // 3. Resolver el método en la clase o en sus ancestros.
+        // 3. Resolver el metodo en la clase o en sus ancestros.
         DisposicionObjetos.MetodoResuelto metodo = disposicion
                 .buscarMetodo(tipoObj, llamada.nombre(), tiposArgs)
                 .orElseThrow(() -> new IllegalStateException(
                         "GeneradorCuartetasPig: método no encontrado: " + llamada.nombre() + " en " + tipoObj));
         TablaSimbolosPig.Firma firma = metodo.firma();
 
-        // 4. Nombre RISC-V: ClaseDeclarante_metodo_<tipos de los parámetros declarados>.
+        // 4. Nombre ClaseDeclarante_metodo_<tipos de los parámetros declarados>.
         String nombreRiscV = DisposicionObjetos.nombreMetodo(metodo.claseDeclarante(), llamada.nombre(), firma);
 
         // 5. Temporal para el retorno.
