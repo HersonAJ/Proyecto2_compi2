@@ -1,10 +1,7 @@
 package com.example.stack_over_pig.riscv.zetariano;
 
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.*;
-import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.AccesoAtributo1;
-import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.LlamadaMetodo1;
-import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.NewArreglo;
-import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.NewObjeto;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.ImprimirPig;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.LeerPig;
@@ -606,9 +603,11 @@ public class GeneradorCuartetasZ {
 
         if (dims.size() == 1) {
             gestor.emitir(new NewArreglo(t, a.tipoBase(), dims.get(0)));
+        } else if (dims.size() == 2) {
+            gestor.emitir(new NewArregloMulti(t, a.tipoBase(), dims));
         } else {
             throw new UnsupportedOperationException(
-                    "GeneradorCuartetasZ: arreglos multidimensionales pendientes (Fase 3b.2)");
+                    "GeneradorCuartetasZ: arreglos de 3+ dimensiones pendientes (Fase 3b.2)");
         }
         ultimoResultado = t;
     }

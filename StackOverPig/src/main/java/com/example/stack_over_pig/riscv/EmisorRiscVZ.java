@@ -4,10 +4,7 @@ import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.AsignacionArreglo;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.AsignacionAtributo;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Continuar1;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasY.Romper1;
-import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.AccesoAtributo1;
-import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.LlamadaMetodo1;
-import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.NewArreglo;
-import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.NewObjeto;
+import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasZ.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.genericas.*;
 import com.example.stack_over_pig.c3d_v2.cuartetas.cuartetasPig.*;
 
@@ -30,6 +27,7 @@ public class EmisorRiscVZ {
     private int siguienteOffset = 8;
     private String tipoClaseActual;
     private Set<String> parametrosPorReferencia = Set.of();
+    private Set<String> arreglosHeap = Set.of();
 
     public EmisorRiscVZ(ContextoEmision ctx) {
         this.ctx = ctx;
@@ -39,6 +37,7 @@ public class EmisorRiscVZ {
         tipoClaseActual = funcion.tipoClase();
         tiposVariablesActuales = funcion.tiposVariables();
         parametrosPorReferencia = new HashSet<>();
+        arreglosHeap = detectarArreglosEnHeap(funcion);
         for (FuncionRiscV.ParametroRiscV p : funcion.parametros()) {
             if (p.esPorReferencia()) parametrosPorReferencia.add(p.nombre());
         }
@@ -152,6 +151,7 @@ public class EmisorRiscVZ {
         else if (c instanceof LlamadaMetodo1 l) emitirLlamadaMetodo(sb, l);
         else if (c instanceof NewObjeto n) emitirNewObjeto(sb, n);
         else if (c instanceof NewArreglo a) emitirNewArreglo(sb, a);
+        else if (c instanceof NewArregloMulti a) emitirNewArregloMulti(sb, a);
         else if (c instanceof Retorno1 r) emitirRetorno(sb, r, funcion);
         else if (c instanceof ConversionTipo ct) emitirConversion(sb, ct);
         else if (c instanceof ImprimirPig i) emitirImprimir(sb, i);
@@ -421,6 +421,89 @@ public class EmisorRiscVZ {
         almacenar(sb, IDX, a.getDestino());
     }
 
+    private void emitirNewArregloMulti(StringBuilder sb, NewArregloMulti a) {
+        List<AccesoMemoria> dims = a.getTamanos();
+        AccesoMemoria dimFilas = dims.get(0);
+        AccesoMemoria dimColumnas = dims.get(1);
+
+        int uid = ctx.siguienteEtiqueta();
+        int offFilas    = offsetDe("__matf_" + uid);
+        int offColumnas = offsetDe("__matc_" + uid);
+        int offBase     = offsetDe("__matb_" + uid);
+        int offContFil  = offsetDe("__matcf_" + uid);
+        int offContCol  = offsetDe("__matcc_" + uid);
+
+        // 1. Calcular filas y columnas.
+        cargar(sb, dimFilas, IZQ, null);
+        almacenar(sb, IZQ, new AccesoVariable("__matf_" + uid, "numerus"));
+        cargar(sb, dimColumnas, DER, null);
+        almacenar(sb, DER, new AccesoVariable("__matc_" + uid, "numerus"));
+
+        // 2. Reservar el arreglo de punteros: filas * 8 bytes.
+        sb.append("    slli ").append(RES).append(", ").append(IZQ).append(", 3\n");
+        sb.append("    la   ").append(DIR).append(", heap_ptr\n");
+        sb.append("    ld   ").append(AUX).append(", 0(").append(DIR).append(")\n");
+        sb.append("    add  ").append(IDX).append(", ").append(AUX).append(", ").append(RES).append("\n");
+        sb.append("    sd   ").append(IDX).append(", 0(").append(DIR).append(")\n");
+        sb.append("    la   ").append(RES).append(", heap\n");
+        sb.append("    add  ").append(RES).append(", ").append(RES).append(", ").append(AUX).append("\n");
+        almacenar(sb, RES, new AccesoVariable("__matb_" + uid, "numerus"));
+
+        // 3. Bucle de filas.
+        int n = ctx.siguienteEtiqueta();
+        sb.append("    sd   zero, ").append(offContFil).append("(s0)\n");
+        sb.append("Lmat_ini_").append(n).append(":\n");
+        sb.append("    ld   ").append(IZQ).append(", ").append(offContFil).append("(s0)\n");
+        sb.append("    ld   ").append(DER).append(", ").append(offFilas).append("(s0)\n");
+        sb.append("    bge  ").append(IZQ).append(", ").append(DER).append(", Lmat_fin_").append(n).append("\n");
+
+        // Reservar fila: columnas * 8.
+        sb.append("    ld   ").append(IZQ).append(", ").append(offColumnas).append("(s0)\n");
+        sb.append("    slli ").append(RES).append(", ").append(IZQ).append(", 3\n");
+        sb.append("    la   ").append(DIR).append(", heap_ptr\n");
+        sb.append("    ld   ").append(AUX).append(", 0(").append(DIR).append(")\n");
+        sb.append("    add  ").append(IDX).append(", ").append(AUX).append(", ").append(RES).append("\n");
+        sb.append("    sd   ").append(IDX).append(", 0(").append(DIR).append(")\n");
+        sb.append("    la   ").append(RES).append(", heap\n");
+        sb.append("    add  ").append(AUX).append(", ").append(RES).append(", ").append(AUX).append("\n");
+        sb.append("    mv   t5, ").append(AUX).append("\n");
+
+        // Guardar AUX en basePunteros[contFil].
+        sb.append("    ld   ").append(IZQ).append(", ").append(offContFil).append("(s0)\n");
+        sb.append("    slli ").append(IZQ).append(", ").append(IZQ).append(", 3\n");
+        sb.append("    ld   ").append(DER).append(", ").append(offBase).append("(s0)\n");
+        sb.append("    add  ").append(DER).append(", ").append(DER).append(", ").append(IZQ).append("\n");
+        sb.append("    sd   ").append(AUX).append(", 0(").append(DER).append(")\n");
+
+        // Inicializar fila a cero.
+        sb.append("    sd   zero, ").append(offContCol).append("(s0)\n");
+        int m = ctx.siguienteEtiqueta();
+        sb.append("Lmat_ini_col_").append(m).append(":\n");
+        sb.append("    ld   ").append(IZQ).append(", ").append(offContCol).append("(s0)\n");
+        sb.append("    ld   ").append(DER).append(", ").append(offColumnas).append("(s0)\n");
+        sb.append("    bge  ").append(IZQ).append(", ").append(DER).append(", Lmat_fin_col_").append(m).append("\n");
+        sb.append("    slli ").append(IZQ).append(", ").append(IZQ).append(", 3\n");
+        sb.append("    add  ").append(DER).append(", t5, ").append(IZQ).append("\n");
+        sb.append("    sd   zero, 0(").append(DER).append(")\n");
+        sb.append("    ld   ").append(IZQ).append(", ").append(offContCol).append("(s0)\n");
+        sb.append("    addi ").append(IZQ).append(", ").append(IZQ).append(", 1\n");
+        sb.append("    sd   ").append(IZQ).append(", ").append(offContCol).append("(s0)\n");
+        sb.append("    j    Lmat_ini_col_").append(m).append("\n");
+        sb.append("Lmat_fin_col_").append(m).append(":\n");
+
+        // contFil++.
+        sb.append("    ld   ").append(IZQ).append(", ").append(offContFil).append("(s0)\n");
+        sb.append("    addi ").append(IZQ).append(", ").append(IZQ).append(", 1\n");
+        sb.append("    sd   ").append(IZQ).append(", ").append(offContFil).append("(s0)\n");
+        sb.append("    j    Lmat_ini_").append(n).append("\n");
+        sb.append("Lmat_fin_").append(n).append(":\n");
+
+        // 4. Almacenar la base del arreglo de punteros en el destino.
+        sb.append("    ld   ").append(IZQ).append(", ").append(offBase).append("(s0)\n");
+        almacenar(sb, IZQ, a.getDestino());
+    }
+
+
     private void emitirRetorno(StringBuilder sb, Retorno1 r, FuncionRiscV funcion) {
         if (r.getValor() != null) cargar(sb, r.getValor(), "a0", null);
         sb.append("    j    __epilogo_").append(funcion.nombre()).append("\n");
@@ -490,12 +573,9 @@ public class EmisorRiscVZ {
             direccionCampo(sb, attr.getBase(), attr.getCampo(), DIR);
             sb.append("    ld   ").append(registro).append(", 0(").append(DIR).append(")\n");
         } else if (acc instanceof AccesoArreglo arr) {
-            cargar(sb, arr.getIndice(), registro, null);
-            direccionBase(sb, arr.getBase(), DIR);
-            sb.append("    slli ").append(registro).append(", ").append(registro).append(", 3\n");
-            sb.append("    add  ").append(DIR).append(", ").append(DIR).append(", ").append(registro).append("\n");
+            direccionElemento(sb, arr.getBase(), arr.getIndice());
             sb.append("    ld   ").append(registro).append(", 0(").append(DIR).append(")\n");
-        } else {
+        }else {
             int off = ubicar(acc);
             boolean porRef = acc instanceof AccesoVariable v && esParametroPorReferencia(v.getNombre());
             String tipoVar = acc instanceof AccesoVariable v ? tipoDeVariable(v.getNombre()) : null;
@@ -533,6 +613,33 @@ public class EmisorRiscVZ {
         }
     }
 
+    /**
+     * Variables que guardan un puntero a un arreglo del heap (new int[n] o new int[a][b]).
+     * Se reconocen por las cuartetas: la variable recibe el resultado de un NewArreglo/NewArregloMulti,
+     * directo o a través de un temporal. La tabla de Pig no conoce las variables locales de Z.
+     */
+    private Set<String> detectarArreglosEnHeap(FuncionRiscV funcion) {
+        Set<String> variables = new HashSet<>();
+        Set<Integer> temporales = new HashSet<>();
+        for (Cuarteta c : funcion.cuartetas()) {
+            AccesoMemoria destino = null;
+            if (c instanceof NewArreglo a) destino = a.getDestino();
+            else if (c instanceof NewArregloMulti a) destino = a.getDestino();
+
+            if (destino instanceof AccesoTemporal t) {
+                temporales.add(t.getNumero());
+            } else if (destino instanceof AccesoVariable v) {
+                variables.add(v.getNombre());
+            } else if (c instanceof AsignacionVariable a
+                    && a.getDestino() instanceof AccesoVariable v
+                    && a.getValor() instanceof AccesoTemporal t
+                    && temporales.contains(t.getNumero())) {
+                variables.add(v.getNombre());
+            }
+        }
+        return variables;
+    }
+
     private static String vNombre(AccesoMemoria acc) {
         return acc instanceof AccesoVariable v ? v.getNombre() : null;
     }
@@ -556,17 +663,24 @@ public class EmisorRiscVZ {
     }
 
     private void almacenarEnArreglo(StringBuilder sb, String regValor, AccesoMemoria base, AccesoMemoria indice) {
-        cargar(sb, indice, IDX, null);
-        direccionBase(sb, base, DIR);
-        sb.append("    slli ").append(IDX).append(", ").append(IDX).append(", 3\n");
-        sb.append("    add  ").append(DIR).append(", ").append(DIR).append(", ").append(IDX).append("\n");
+        direccionElemento(sb, base, indice);
         sb.append("    sd   ").append(regValor).append(", 0(").append(DIR).append(")\n");
     }
 
     private void direccionBase(StringBuilder sb, AccesoMemoria base, String registro) {
         if (base instanceof AccesoVariable v) {
             int off = offsetDe(v.getNombre());
-            if (esParametroPorReferencia(v.getNombre())) {
+            boolean porRef = esParametroPorReferencia(v.getNombre());
+            String tipoVar = tipoDeVariable(v.getNombre());
+            boolean esArreglo = false;
+            var sim = ctx.getTabla().buscarVariable(v.getNombre());
+            if (sim.isPresent() && sim.get().dimensiones() > 0) {
+                esArreglo = true;
+            }
+
+            if (porRef || esArreglo || arreglosHeap.contains(v.getNombre())) {
+                // Parámetro por referencia o variable de tipo arreglo (puntero en el slot):
+                // cargar el puntero.
                 if (cabe(off)) {
                     sb.append("    ld   ").append(registro).append(", ").append(off).append("(s0)\n");
                 } else {
@@ -575,6 +689,7 @@ public class EmisorRiscVZ {
                     sb.append("    ld   ").append(registro).append(", 0(").append(AUX).append(")\n");
                 }
             } else {
+                // Struct por valor: el slot YA es la dirección de los datos.
                 if (cabe(off)) {
                     sb.append("    addi ").append(registro).append(", s0, ").append(off).append("\n");
                 } else {
@@ -591,8 +706,37 @@ public class EmisorRiscVZ {
             }
             return;
         }
+        if (base instanceof AccesoArreglo arr) {
+            // El valor de un AccesoArreglo ya es la dirección base de la fila.
+            cargar(sb, arr, registro, null);
+            return;
+        }
         throw new UnsupportedOperationException(
                 "EmisorRiscVZ: base de arreglo no soportada: " + base.getClass().getSimpleName());
+    }
+
+    /** Deja en DIR (t3) la dirección del elemento base[indice]. */
+    private void direccionElemento(StringBuilder sb, AccesoMemoria base, AccesoMemoria indice) {
+        if (base instanceof AccesoArreglo) {
+            // Base compuesta (m[i][j]): su cálculo usa t5, así que va primero y el índice después.
+            direccionBase(sb, base, DIR);
+            if (indice instanceof AccesoAtributo1 || indice instanceof AccesoArreglo) {
+                // El índice también usa DIR: se guarda la base en la pila mientras se calcula.
+                sb.append("    addi sp, sp, -16\n");
+                sb.append("    sd   ").append(DIR).append(", 0(sp)\n");
+                cargar(sb, indice, "t5", null);
+                sb.append("    ld   ").append(DIR).append(", 0(sp)\n");
+                sb.append("    addi sp, sp, 16\n");
+            } else {
+                cargar(sb, indice, "t5", null);
+            }
+        } else {
+            // Índice primero (puede usar DIR, que todavía está libre), después la base.
+            cargar(sb, indice, "t5", null);
+            direccionBase(sb, base, DIR);
+        }
+        sb.append("    slli t5, t5, 3\n");
+        sb.append("    add  ").append(DIR).append(", ").append(DIR).append(", t5\n");
     }
 
     private boolean esCampoArregloPuntero(AccesoAtributo1 attr) {

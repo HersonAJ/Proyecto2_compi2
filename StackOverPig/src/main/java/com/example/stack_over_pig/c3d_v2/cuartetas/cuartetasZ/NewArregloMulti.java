@@ -22,6 +22,11 @@ public class NewArregloMulti extends Cuarteta {
     private final String tipoElementoC;       // "int", "double", "struct Persona"
     private final List<AccesoMemoria> tamanos;
 
+
+    public AccesoMemoria getDestino() { return destino; }
+    public List<AccesoMemoria> getTamanos() { return tamanos; }
+    public String getTipoElementoC() { return tipoElementoC; }
+
     public NewArregloMulti(AccesoMemoria destino,
                            String tipoElementoC,
                            List<AccesoMemoria> tamanos) {
