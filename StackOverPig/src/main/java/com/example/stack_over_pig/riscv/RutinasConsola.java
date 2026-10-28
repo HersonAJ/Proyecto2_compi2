@@ -465,11 +465,13 @@ final class RutinasConsola {
                         addi t2, t2, -1
                         sb   t6, 0(t2)
                         bne  t4, zero, __ztsd_ent_ciclo
+                        sb   zero, 0(t1)
                         j    __ztsd_ent_copia
                     __ztsd_cero:
                         addi t2, t2, -1
                         li   t6, 48
                         sb   t6, 0(t2)
+                        sb   zero, 0(t1)
                     __ztsd_ent_copia:
                         lbu  t6, 0(t2)
                         beq  t6, zero, __ztsd_ent_fin

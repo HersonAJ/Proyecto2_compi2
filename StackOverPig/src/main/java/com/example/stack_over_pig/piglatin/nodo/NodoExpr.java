@@ -55,7 +55,7 @@ public sealed interface NodoExpr extends NodoAST permits
 
     record LiteralNulo(int linea, int columna) implements NodoExpr {
         @Override public TipoNodoExpr tipoNodo() { return TipoNodoExpr.LITERAL_NULO; }
-        @Override public void aceptar(VisitanteGeneradorCuartetas v) { /* Fase 3 */ }
+        @Override public void aceptar(VisitanteGeneradorCuartetas v) { v.visitar(this); }
     }
 
     record ListaLiteral(int linea, int columna, List<NodoExpr> elementos) implements NodoExpr {

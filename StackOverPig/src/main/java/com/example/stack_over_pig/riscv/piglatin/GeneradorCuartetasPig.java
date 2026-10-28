@@ -300,6 +300,11 @@ public class GeneradorCuartetasPig implements VisitanteGeneradorCuartetas {
     }
 
     @Override
+    public void visitar(NodoExpr.LiteralNulo l) {
+        ultimoResultado = new Literal(null, "null");
+    }
+
+    @Override
     public void visitar(NodoExpr.Identificador i) {
         String tipo = tabla.buscarVariable(i.nombre())
                 .map(TablaSimbolosPig.SimboloVariable::tipo)
